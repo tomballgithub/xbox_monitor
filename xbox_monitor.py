@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v1.5
+v1.6
 
 Tool implementing real-time tracking of Xbox Live players activities:
 https://github.com/misiektoja/xbox_monitor/
@@ -16,73 +16,83 @@ tzlocal
 requests
 """
 
-VERSION = 1.5
+VERSION = 1.6
 
 # ---------------------------
 # CONFIGURATION SECTION START
 # ---------------------------
 
-# Register new app in Azure AD: https://portal.azure.com/#blade/Microsoft_AAD_RegisteredApps/ApplicationsListBlade
-# - name your app (e.g. xbox_monitor)
-# - for account type select "Personal Microsoft accounts only"
-# - for redirect URL select "Web" type and put: http://localhost/auth/callback
-# Copy value of 'Application (client) ID' to MS_APP_CLIENT_ID below (or use -u parameter)
+# Register a new app in Azure AD:
+# https://portal.azure.com/#blade/Microsoft_AAD_RegisteredApps/ApplicationsListBlade
+#
+# - Name your app (e.g. xbox_monitor)
+# - For account type, select: "Personal Microsoft accounts only"
+# - For redirect URL, select "Web" and set it to: http://localhost/auth/callback
+#
+# Copy the value of 'Application (client) ID' into MS_APP_CLIENT_ID below (or use the -u parameter)
 MS_APP_CLIENT_ID = "your_ms_application_client_id"
 
 # Next to 'Client credentials' click 'Add a certificate or secret'
-# Add a new client secret with long expiration date (like 2 years) and some description (e.g. xbox_monitor_secret)
-# Copy the contents from 'Value' column to MS_APP_CLIENT_SECRET below (or use -w parameter)
+# - Add a new client secret with a long expiration (e.g. 2 years) and a description (e.g. xbox_monitor_secret)
+# - Copy the 'Value' of the secret and assign it to MS_APP_CLIENT_SECRET below (or use the -w parameter)
 MS_APP_CLIENT_SECRET = "your_ms_application_secret_value"
 
-# SMTP settings for sending email notifications, you can leave it as it is below and no notifications will be sent
+# SMTP settings for sending email notifications
+# If left as-is, no notifications will be sent
 SMTP_HOST = "your_smtp_server_ssl"
 SMTP_PORT = 587
 SMTP_USER = "your_smtp_user"
 SMTP_PASSWORD = "your_smtp_password"
 SMTP_SSL = True
 SENDER_EMAIL = "your_sender_email"
-# SMTP_HOST = "your_smtp_server_plaintext"
-# SMTP_PORT = 25
-# SMTP_USER = "your_smtp_user"
-# SMTP_PASSWORD = "your_smtp_password"
-# SMTP_SSL = False
-# SENDER_EMAIL = "your_sender_email"
 RECEIVER_EMAIL = "your_receiver_email"
 
-# How often do we perform checks for player activity when user is offline, you can also use -c parameter; in seconds
+# How often to check for player activity when the user is offline; in seconds
+# Can also be set using the -c parameter
 XBOX_CHECK_INTERVAL = 300  # 5 min
 
-# How often do we perform checks for player activity when user is online, you can also use -k parameter; in seconds
+# How often to check for player activity when the user is online; in seconds
+# Can also be set using the -k parameter
 XBOX_ACTIVE_CHECK_INTERVAL = 90  # 1,5 min
 
-# Specify your local time zone so we convert Xbox API timestamps to your time (for example: 'Europe/Warsaw')
-# If you leave it as 'Auto' we will try to automatically detect the local timezone
+# Set your local time zone so that Xbox API timestamps are converted accordingly (e.g. 'Europe/Warsaw').
+# Use this command to list all time zones supported by pytz:
+# python3 -c "import pytz; print('\n'.join(pytz.all_timezones))"
+# If set to 'Auto', the tool will try to detect your local time zone automatically
 LOCAL_TIMEZONE = 'Auto'
 
-# If user gets offline and online again (for example due to rebooting the console) during the next OFFLINE_INTERRUPT seconds then we set online start timestamp back to the previous one (so called short offline interruption) + we also keep stats from the previous session (like total time and number of played games)
+# If the user disconnects (offline) and reconnects (online) within OFFLINE_INTERRUPT seconds,
+# the online session start time will be restored to the previous session’s start time (short offline interruption),
+# and previous session statistics (like total playtime and number of played games) will be preserved
 OFFLINE_INTERRUPT = 420  # 7 mins
 
-# After performing authentication the token will be saved into a file, type its location and name below
+# After authentication, the access token will be saved to the following file
 MS_AUTH_TOKENS_FILE = "xbox_tokens.json"
 
-# How often do we perform alive check by printing "alive check" message in the output; in seconds
+# How often to print an "alive check" message to the output; in seconds
 TOOL_ALIVE_INTERVAL = 21600  # 6 hours
 
-# URL we check in the beginning to make sure we have internet connectivity
-CHECK_INTERNET_URL = 'http://www.google.com/'
+# URL used to verify internet connectivity at startup
+CHECK_INTERNET_URL = 'https://user.auth.xboxlive.com/'
 
-# Default value for initial checking of internet connectivity; in seconds
+# Timeout used when checking initial internet connectivity; in seconds
 CHECK_INTERNET_TIMEOUT = 5
 
-# The name of the .log file; the tool by default will output its messages to xbox_monitor_gamertag.log file
+# Base name of the log file. The tool will save its output to xbox_monitor_<gamertag>.log file
 XBOX_LOGFILE = "xbox_monitor"
 
-# Value used by signal handlers increasing/decreasing the check for player activity when user is online; in seconds
+# Value used by signal handlers to increase or decrease the online activity check interval (XBOX_ACTIVE_CHECK_INTERVAL); in seconds
 XBOX_ACTIVE_CHECK_SIGNAL_VALUE = 30  # 30 seconds
+
+# Whether to clear the terminal screen after starting the tool
+CLEAR_SCREEN = True
 
 # -------------------------
 # CONFIGURATION SECTION END
 # -------------------------
+
+# Width of horizontal line (─)
+HORIZONTAL_LINE = 105
 
 TOOL_ALIVE_COUNTER = TOOL_ALIVE_INTERVAL / XBOX_CHECK_INTERVAL
 
@@ -123,7 +133,7 @@ import pytz
 try:
     from tzlocal import get_localzone
 except ImportError:
-    pass
+    get_localzone = None
 import platform
 import re
 import ipaddress
@@ -133,6 +143,7 @@ from xbox.webapi.api.client import XboxLiveClient
 from xbox.webapi.authentication.manager import AuthenticationManager
 from xbox.webapi.authentication.models import OAuth2TokenResponse
 from xbox.webapi.common.signed_session import SignedSession
+from xbox.webapi.api.provider.presence.models import PresenceLevel
 
 
 # Logger class to output messages to stdout and log file
@@ -158,20 +169,30 @@ def signal_handler(sig, frame):
     sys.exit(0)
 
 
-# Function to check internet connectivity
-def check_internet():
-    url = CHECK_INTERNET_URL
+# Checks internet connectivity
+def check_internet(url=CHECK_INTERNET_URL, timeout=CHECK_INTERNET_TIMEOUT):
     try:
-        _ = req.get(url, timeout=CHECK_INTERNET_TIMEOUT)
-        print("OK")
+        _ = req.get(url, timeout=timeout)
         return True
-    except Exception as e:
-        print(f"No connectivity, please check your network - {e}")
-        sys.exit(1)
-    return False
+    except req.RequestException as e:
+        print(f"* No connectivity, please check your network:\n\n{e}")
+        return False
 
 
-# Function to convert absolute value of seconds to human readable format
+# Clears the terminal screen
+def clear_screen(enabled=True):
+    if not enabled:
+        return
+    try:
+        if platform.system() == 'Windows':
+            os.system('cls')
+        else:
+            os.system('clear')
+    except Exception:
+        print("* Cannot clear the screen contents")
+
+
+# Converts absolute value of seconds to human readable format
 def display_time(seconds, granularity=2):
     intervals = (
         ('years', 31556952),  # approximation
@@ -197,7 +218,7 @@ def display_time(seconds, granularity=2):
         return '0 seconds'
 
 
-# Function to calculate time span between two timestamps in seconds
+# Calculates time span between two timestamps, accepts timestamp integers, floats and datetime objects
 def calculate_timespan(timestamp1, timestamp2, show_weeks=True, show_hours=True, show_minutes=True, show_seconds=True, granularity=3):
     result = []
     intervals = ['years', 'months', 'weeks', 'days', 'hours', 'minutes', 'seconds']
@@ -264,13 +285,13 @@ def calculate_timespan(timestamp1, timestamp2, show_weeks=True, show_hours=True,
         return '0 seconds'
 
 
-# Function to send email notification
+# Sends email notification
 def send_email(subject, body, body_html, use_ssl, smtp_timeout=15):
     fqdn_re = re.compile(r'(?=^.{4,253}$)(^((?!-)[a-zA-Z0-9-]{1,63}(?<!-)\.)+[a-zA-Z]{2,63}\.?$)')
     email_re = re.compile(r'[^@]+@[^@]+\.[^@]+')
 
     try:
-        is_ip = ipaddress.ip_address(str(SMTP_HOST))
+        ipaddress.ip_address(str(SMTP_HOST))
     except ValueError:
         if not fqdn_re.search(str(SMTP_HOST)):
             print("Error sending email - SMTP settings are incorrect (invalid IP address/FQDN in SMTP_HOST)")
@@ -311,7 +332,7 @@ def send_email(subject, body, body_html, use_ssl, smtp_timeout=15):
         email_msg = MIMEMultipart('alternative')
         email_msg["From"] = SENDER_EMAIL
         email_msg["To"] = RECEIVER_EMAIL
-        email_msg["Subject"] = Header(subject, 'utf-8')
+        email_msg["Subject"] = str(Header(subject, 'utf-8'))
 
         if body:
             part1 = MIMEText(body, 'plain')
@@ -326,23 +347,35 @@ def send_email(subject, body, body_html, use_ssl, smtp_timeout=15):
         smtpObj.sendmail(SENDER_EMAIL, RECEIVER_EMAIL, email_msg.as_string())
         smtpObj.quit()
     except Exception as e:
-        print(f"Error sending email - {e}")
+        print(f"Error sending email: {e}")
         return 1
     return 0
 
 
-# Function to write CSV entry
+# Initializes the CSV file
+def init_csv_file(csv_file_name):
+    try:
+        if not os.path.isfile(csv_file_name) or os.path.getsize(csv_file_name) == 0:
+            with open(csv_file_name, 'a', newline='', buffering=1, encoding="utf-8") as f:
+                writer = csv.DictWriter(f, fieldnames=csvfieldnames, quoting=csv.QUOTE_NONNUMERIC)
+                writer.writeheader()
+    except Exception as e:
+        raise RuntimeError(f"Could not initialize CSV file '{csv_file_name}': {e}")
+
+
+# Writes CSV entry
 def write_csv_entry(csv_file_name, timestamp, status, gamename):
     try:
-        csv_file = open(csv_file_name, 'a', newline='', buffering=1, encoding="utf-8")
-        csvwriter = csv.DictWriter(csv_file, fieldnames=csvfieldnames, quoting=csv.QUOTE_NONNUMERIC)
-        csvwriter.writerow({'Date': timestamp, 'Status': status, 'Game name': gamename})
-        csv_file.close()
-    except Exception as e:
-        raise
+
+        with open(csv_file_name, 'a', newline='', buffering=1, encoding="utf-8") as csv_file:
+            csvwriter = csv.DictWriter(csv_file, fieldnames=csvfieldnames, quoting=csv.QUOTE_NONNUMERIC)
+            csvwriter.writerow({'Date': timestamp, 'Status': status, 'Game name': gamename})
+
+    except Exception:
+        raise RuntimeError(f"Failed to write to CSV file '{csv_file_name}': {e}")
 
 
-# Function to convert UTC string returned by XBOX API to datetime object in specified timezone
+# Converts UTC string returned by XBOX API to datetime object in specified timezone
 def convert_utc_str_to_tz_datetime(utc_string, timezone):
     try:
         utc_string_sanitize = utc_string.split('.', 1)[0]
@@ -352,22 +385,22 @@ def convert_utc_str_to_tz_datetime(utc_string, timezone):
         new_tz = pytz.timezone(timezone)
         dt_new_tz = old_tz.localize(dt_utc).astimezone(new_tz)
         return dt_new_tz
-    except Exception as e:
+    except Exception:
         return datetime.fromtimestamp(0)
 
 
-# Function to return the timestamp in human readable format; eg. Sun, 21 Apr 2024, 15:08:45
+# Returns the current date/time in human readable format; eg. Sun 21 Apr 2024, 15:08:45
 def get_cur_ts(ts_str=""):
     return (f'{ts_str}{calendar.day_abbr[(datetime.fromtimestamp(int(time.time()))).weekday()]}, {datetime.fromtimestamp(int(time.time())).strftime("%d %b %Y, %H:%M:%S")}')
 
 
-# Function to print the current timestamp in human readable format; eg. Sun, 21 Apr 2024, 15:08:45
+# Prints the current date/time in human readable format with separator; eg. Sun 21 Apr 2024, 15:08:45
 def print_cur_ts(ts_str=""):
     print(get_cur_ts(str(ts_str)))
-    print("---------------------------------------------------------------------------------------------------------")
+    print("─" * HORIZONTAL_LINE)
 
 
-# Function to return the timestamp/datetime object in human readable format (long version); eg. Sun, 21 Apr 2024, 15:08:45
+# Returns the timestamp/datetime object in human readable format (long version); eg. Sun 21 Apr 2024, 15:08:45
 def get_date_from_ts(ts):
     if type(ts) is datetime:
         ts_new = int(round(ts.timestamp()))
@@ -381,7 +414,7 @@ def get_date_from_ts(ts):
     return (f'{calendar.day_abbr[(datetime.fromtimestamp(ts_new)).weekday()]} {datetime.fromtimestamp(ts_new).strftime("%d %b %Y, %H:%M:%S")}')
 
 
-# Function to return the timestamp/datetime object in human readable format (short version); eg.
+# Returns the timestamp/datetime object in human readable format (short version); eg.
 # Sun 21 Apr 15:08
 # Sun 21 Apr 24, 15:08 (if show_year == True and current year is different)
 # Sun 21 Apr (if show_hour == False)
@@ -410,7 +443,7 @@ def get_short_date_from_ts(ts, show_year=False, show_hour=True):
         return (f'{calendar.day_abbr[(datetime.fromtimestamp(ts_new)).weekday()]} {datetime.fromtimestamp(ts_new).strftime(f"%d %b{hour_strftime}")}')
 
 
-# Function to return the timestamp/datetime object in human readable format (only hour, minutes and optionally seconds): eg. 15:08:12
+# Returns the timestamp/datetime object in human readable format (only hour, minutes and optionally seconds): eg. 15:08:12
 def get_hour_min_from_ts(ts, show_seconds=False):
     if type(ts) is datetime:
         ts_new = int(round(ts.timestamp()))
@@ -428,7 +461,7 @@ def get_hour_min_from_ts(ts, show_seconds=False):
     return (str(datetime.fromtimestamp(ts_new).strftime(out_strf)))
 
 
-# Function to return the range between two timestamps/datetime objects; eg. Sun 21 Apr 14:09 - 14:15
+# Returns the range between two timestamps/datetime objects; eg. Sun 21 Apr 14:09 - 14:15
 def get_range_of_dates_from_tss(ts1, ts2, between_sep=" - ", short=False):
     if type(ts1) is datetime:
         ts1_new = int(round(ts1.timestamp()))
@@ -462,6 +495,11 @@ def get_range_of_dates_from_tss(ts1, ts2, between_sep=" - ", short=False):
         else:
             out_str = f"{get_date_from_ts(ts1_new)}{between_sep}{get_date_from_ts(ts2_new)}"
     return (str(out_str))
+
+
+# Checks if the timezone name is correct
+def is_valid_timezone(tz_name):
+    return tz_name in pytz.all_timezones
 
 
 # Signal handler for SIGUSR1 allowing to switch active/inactive email notifications
@@ -515,6 +553,7 @@ def decrease_active_check_signal_handler(sig, frame):
     print_cur_ts("Timestamp:\t\t\t")
 
 
+# Returns mapping of platform code name to recognizable name
 def xbox_get_platform_mapping(platform, short=True):
     if ("scarlett" or "anaconda" or "starkville" or "lockhart" or "edith") in str(platform).lower():
         if short:
@@ -546,6 +585,7 @@ def xbox_get_platform_mapping(platform, short=True):
     return platform
 
 
+# Processes Xbox presence class
 def xbox_process_presence_class(presence, platform_short=True):
     status = ""
     title_name = ""
@@ -596,8 +636,8 @@ def xbox_process_presence_class(presence, platform_short=True):
     return status, title_name, game_name, platform, lastonline_ts
 
 
-# Main function monitoring activity of the specified Xbox user
-async def xbox_monitor_user(xbox_gamertag, error_notification, csv_file_name, csv_exists):
+# Main function that monitors activity of the specified Xbox user
+async def xbox_monitor_user(xbox_gamertag, error_notification, csv_file_name):
 
     alive_counter = 0
     status_ts = 0
@@ -621,13 +661,9 @@ async def xbox_monitor_user(xbox_gamertag, error_notification, csv_file_name, cs
 
     try:
         if csv_file_name:
-            csv_file = open(csv_file_name, 'a', newline='', buffering=1, encoding="utf-8")
-            csvwriter = csv.DictWriter(csv_file, fieldnames=csvfieldnames, quoting=csv.QUOTE_NONNUMERIC)
-            if not csv_exists:
-                csvwriter.writeheader()
-            csv_file.close()
+            init_csv_file(csv_file_name)
     except Exception as e:
-        print(f"* Error - {e}")
+        print(f"* Error: {e}")
 
     # Create a XBOX HTTP client session
     async with SignedSession() as session:
@@ -641,7 +677,7 @@ async def xbox_monitor_user(xbox_gamertag, error_notification, csv_file_name, cs
                 tokens = f.read()
             auth_mgr.oauth = OAuth2TokenResponse.model_validate_json(tokens)
         except FileNotFoundError as e:
-            print(f"File {MS_AUTH_TOKENS_FILE} not found or doesn't contain tokens! Error: {e}")
+            print(f"* File {MS_AUTH_TOKENS_FILE} not found or doesn't contain tokens! Error: {e}")
             print("\nAuthorizing via OAUTH ...")
             url = auth_mgr.generate_authorization_url()
             print(f"\nAuth via URL (paste in your web browser):\n{url}")
@@ -653,12 +689,12 @@ async def xbox_monitor_user(xbox_gamertag, error_notification, csv_file_name, cs
         try:
             await auth_mgr.refresh_tokens()
         except HTTPStatusError as e:
-            print(f"Could not refresh tokens from {MS_AUTH_TOKENS_FILE}! Error: {e}\nYou might have to delete the tokens file and re-authenticate if refresh token is expired")
+            print(f"* Could not refresh tokens from {MS_AUTH_TOKENS_FILE}! Error: {e}\nYou might have to delete the tokens file and re-authenticate if refresh token is expired")
             sys.exit(1)
 
         # Save the refreshed/updated tokens
         with open(MS_AUTH_TOKENS_FILE, mode="w") as f:
-            f.write(auth_mgr.oauth.json())
+            f.write(auth_mgr.oauth.model_dump_json())
 
         # Construct the Xbox API client from AuthenticationManager instance
         xbl_client = XboxLiveClient(auth_mgr)
@@ -667,7 +703,7 @@ async def xbox_monitor_user(xbox_gamertag, error_notification, csv_file_name, cs
         try:
             profile = await xbl_client.profile.get_profile_by_gamertag(xbox_gamertag)
         except Exception as e:
-            print(f"Error - cannot get profile for user {xbox_gamertag}: {e}")
+            print(f"* Error, cannot get profile for user {xbox_gamertag}: {e}")
             sys.exit(1)
 
         if 'profile_users' in dir(profile):
@@ -675,34 +711,37 @@ async def xbox_monitor_user(xbox_gamertag, error_notification, csv_file_name, cs
             try:
                 xuid = int(profile.profile_users[0].id)
             except IndexError:
-                print(f"Error - cannot get XUID for user {xbox_gamertag}")
+                print(f"* Error: cannot get XUID for user {xbox_gamertag}")
                 sys.exit(1)
 
             location_tmp = next((x for x in profile.profile_users[0].settings if x.id == "Location"), None)
-            if location_tmp.value:
-                location = location_tmp.value
+            if location_tmp:
+                if location_tmp.value:
+                    location = location_tmp.value
             bio_tmp = next((x for x in profile.profile_users[0].settings if x.id == "Bio"), None)
-            if bio_tmp.value:
-                bio = bio_tmp.value
+            if bio_tmp:
+                if bio_tmp.value:
+                    bio = bio_tmp.value
             realname_tmp = next((x for x in profile.profile_users[0].settings if x.id == "RealNameOverride"), None)
-            if realname_tmp.value:
-                realname = realname_tmp.value
+            if realname_tmp:
+                if realname_tmp.value:
+                    realname = realname_tmp.value
 
         if xuid == 0:
-            print(f"Error - cannot get XUID for user {xbox_gamertag}")
+            print(f"* Error: cannot get XUID for user {xbox_gamertag}")
             sys.exit(1)
 
         # Get presence status (by XUID)
         try:
-            presence = await xbl_client.presence.get_presence(str(xuid), "ALL")
+            presence = await xbl_client.presence.get_presence(str(xuid), PresenceLevel.ALL)
         except Exception as e:
-            print(f"Error - cannot get presence for user {xbox_gamertag}: {e}")
+            print(f"* Error, cannot get presence for user {xbox_gamertag}: {e}")
             sys.exit(1)
 
         status, title_name, game_name, platform, lastonline_ts = xbox_process_presence_class(presence, False)
 
         if not status:
-            print(f"Error - cannot get status for user {xbox_gamertag}")
+            print(f"* Error: cannot get status for user {xbox_gamertag}")
             sys.exit(1)
 
         status_ts_old = int(time.time())
@@ -722,7 +761,7 @@ async def xbox_monitor_user(xbox_gamertag, error_notification, csv_file_name, cs
                 with open(xbox_last_status_file, 'r', encoding="utf-8") as f:
                     last_status_read = json.load(f)
             except Exception as e:
-                print(f"* Cannot load last status from '{xbox_last_status_file}' file - {e}")
+                print(f"* Cannot load last status from '{xbox_last_status_file}' file: {e}")
             if last_status_read:
                 last_status_ts = last_status_read[0]
                 last_status = last_status_read[1]
@@ -757,7 +796,7 @@ async def xbox_monitor_user(xbox_gamertag, error_notification, csv_file_name, cs
                 with open(xbox_last_status_file, 'w', encoding="utf-8") as f:
                     json.dump(last_status_to_save, f, indent=2)
             except Exception as e:
-                print(f"* Cannot save last status to '{xbox_last_status_file}' file - {e}")
+                print(f"* Cannot save last status to '{xbox_last_status_file}' file: {e}")
 
         print(f"\nXbox user gamer tag:\t\t{xbox_gamertag}")
         print(f"Xbox XUID:\t\t\t{xuid}")
@@ -785,7 +824,7 @@ async def xbox_monitor_user(xbox_gamertag, error_notification, csv_file_name, cs
             if csv_file_name and (status != last_status):
                 write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), status, game_name)
         except Exception as e:
-            print(f"* Error: cannot write CSV entry - {e}")
+            print(f"* Error: {e}")
 
         if last_status_ts == 0:
             if lastonline_ts and status == "offline":
@@ -797,7 +836,7 @@ async def xbox_monitor_user(xbox_gamertag, error_notification, csv_file_name, cs
                 with open(xbox_last_status_file, 'w', encoding="utf-8") as f:
                     json.dump(last_status_to_save, f, indent=2)
             except Exception as e:
-                print(f"* Cannot save last status to '{xbox_last_status_file}' file - {e}")
+                print(f"* Cannot save last status to '{xbox_last_status_file}' file: {e}")
 
         if status_ts_old != status_ts_old_bck:
             if status == "offline":
@@ -814,10 +853,19 @@ async def xbox_monitor_user(xbox_gamertag, error_notification, csv_file_name, cs
         alive_counter = 0
         email_sent = False
 
+        m_subject = m_body = ""
+
+        if status and status != "offline":
+            sleep_interval = XBOX_ACTIVE_CHECK_INTERVAL
+        else:
+            sleep_interval = XBOX_CHECK_INTERVAL
+
+        time.sleep(sleep_interval)
+
         # Main loop
         while True:
             try:
-                presence = await xbl_client.presence.get_presence(str(xuid), "ALL")
+                presence = await xbl_client.presence.get_presence(str(xuid), PresenceLevel.ALL)
                 status, title_name, game_name, platform, lastonline_ts = xbox_process_presence_class(presence)
                 if not status:
                     raise ValueError('Xbox user status is empty')
@@ -827,7 +875,7 @@ async def xbox_monitor_user(xbox_gamertag, error_notification, csv_file_name, cs
                     sleep_interval = XBOX_ACTIVE_CHECK_INTERVAL
                 else:
                     sleep_interval = XBOX_CHECK_INTERVAL
-                print(f"Error getting presence, retrying in {display_time(sleep_interval)} - {e}")
+                print(f"* Error getting presence, retrying in {display_time(sleep_interval)}: {e}")
                 if 'validation' in str(e) or 'auth' in str(e) or 'token' in str(e):
                     print("* Xbox auth key might not be valid anymore!")
                     if error_notification and not email_sent:
@@ -860,7 +908,7 @@ async def xbox_monitor_user(xbox_gamertag, error_notification, csv_file_name, cs
                     with open(xbox_last_status_file, 'w', encoding="utf-8") as f:
                         json.dump(last_status_to_save, f, indent=2)
                 except Exception as e:
-                    print(f"* Cannot save last status to '{xbox_last_status_file}' file - {e}")
+                    print(f"* Cannot save last status to '{xbox_last_status_file}' file: {e}")
 
                 print(f"Xbox user {xbox_gamertag} changed status from {status_old} to {status}{platform_str}")
                 print(f"User was {status_old} for {calculate_timespan(int(status_ts), int(status_ts_old))} ({get_range_of_dates_from_tss(int(status_ts_old), int(status_ts), short=True)})")
@@ -961,7 +1009,7 @@ async def xbox_monitor_user(xbox_gamertag, error_notification, csv_file_name, cs
 
                 change = True
 
-                if game_change_notification:
+                if game_change_notification and m_subject and m_body:
                     print(f"Sending email notification to {RECEIVER_EMAIL}")
                     send_email(m_subject, m_body, "", SMTP_SSL)
 
@@ -975,7 +1023,7 @@ async def xbox_monitor_user(xbox_gamertag, error_notification, csv_file_name, cs
                     if csv_file_name:
                         write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), status, game_name)
                 except Exception as e:
-                    print(f"* Error: cannot write CSV entry - {e}")
+                    print(f"* Error: {e}")
 
             status_old = status
             game_name_old = game_name
@@ -998,29 +1046,107 @@ if __name__ == "__main__":
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
-    try:
-        if platform.system() == 'Windows':
-            os.system('cls')
-        else:
-            os.system('clear')
-    except:
-        print("* Cannot clear the screen contents")
+    clear_screen(CLEAR_SCREEN)
 
     print(f"Xbox Monitoring Tool v{VERSION}\n")
 
-    parser = argparse.ArgumentParser("xbox_monitor")
-    parser.add_argument("XBOX_GAMERTAG", nargs="?", help="User's Xbox gamer tag", type=str)
-    parser.add_argument("-u", "--ms_app_client_id", help="Microsoft Azure application client ID to override the value defined within the script (MS_APP_CLIENT_ID)", type=str)
-    parser.add_argument("-w", "--ms_app_client_secret", help="Microsoft Azure application client secret to override the value defined within the script (MS_APP_CLIENT_SECRET)", type=str)
-    parser.add_argument("-a", "--active_inactive_notification", help="Send email notification once user changes status from active to inactive and vice versa (online/offline)", action='store_true')
-    parser.add_argument("-g", "--game_change_notification", help="Send email notification once user starts/changes/stops playing the game", action='store_true')
-    parser.add_argument("-s", "--status_notification", help="Send email notification for all player status changes (online/away/offline)", action='store_true')
-    parser.add_argument("-e", "--error_notification", help="Disable sending email notifications in case of errors like oauth issues", action='store_false')
-    parser.add_argument("-c", "--check_interval", help="Time between monitoring checks if user is offline, in seconds", type=int)
-    parser.add_argument("-k", "--active_check_interval", help="Time between monitoring checks if user is NOT offline, in seconds", type=int)
-    parser.add_argument("-b", "--csv_file", help="Write all status & game changes to CSV file", type=str, metavar="CSV_FILENAME")
-    parser.add_argument("-d", "--disable_logging", help="Disable logging to file 'xbox_monitor_user.log' file", action='store_true')
-    parser.add_argument("-z", "--send_test_email_notification", help="Send test email notification to verify SMTP settings defined in the script", action='store_true')
+    parser = argparse.ArgumentParser(
+        prog="xbox_monitor",
+        description="Monitor an Xbox user’s playing status and send customizable email alerts [ https://github.com/misiektoja/xbox_monitor/ ]"
+    )
+
+    # Positional
+    parser.add_argument(
+        "xbox_gamertag",
+        nargs="?",
+        metavar="XBOX_GAMERTAG",
+        help="User's Xbox gamer tag",
+        type=str
+    )
+
+    # API credentials
+    creds = parser.add_argument_group("API credentials")
+    creds.add_argument(
+        "-u", "--ms-app-client-id",
+        dest="ms_app_client_id",
+        metavar="MS_APP_CLIENT_ID",
+        help="Microsoft Azure application client ID",
+        type=str
+    )
+    creds.add_argument(
+        "-w", "--ms-app-client-secret",
+        dest="ms_app_client_secret",
+        metavar="MS_APP_CLIENT_SECRET",
+        help="Microsoft Azure application client secret",
+        type=str
+    )
+
+    # Notifications
+    notify = parser.add_argument_group("Notifications")
+    notify.add_argument(
+        "-a", "--notify-active-inactive",
+        dest="notify_active_inactive",
+        action="store_true",
+        help="Email when user goes online/offline"
+    )
+    notify.add_argument(
+        "-g", "--notify-game-change",
+        dest="notify_game_change",
+        action="store_true",
+        help="Email on game start/change/stop"
+    )
+    notify.add_argument(
+        "-s", "--notify-status",
+        dest="notify_status",
+        action="store_true",
+        help="Email on all status changes"
+    )
+    notify.add_argument(
+        "-e", "--no-error-notify",
+        dest="notify_errors",
+        action="store_false",
+        help="Disable email on errors"
+    )
+    notify.add_argument(
+        "-z", "--send-test-email",
+        dest="send_test_email",
+        action="store_true",
+        help="Send test email to verify SMTP settings"
+    )
+
+    # Intervals & timers
+    times = parser.add_argument_group("Intervals & timers")
+    times.add_argument(
+        "-c", "--check-interval",
+        dest="check_interval",
+        metavar="SECONDS",
+        type=int,
+        help="Polling interval when user is offline"
+    )
+    times.add_argument(
+        "-k", "--active-interval",
+        dest="active_interval",
+        metavar="SECONDS",
+        type=int,
+        help="Polling interval when user is in game"
+    )
+
+    # Features & Output
+    opts = parser.add_argument_group("Features & output")
+    opts.add_argument(
+        "-b", "--csv-file",
+        dest="csv_file",
+        metavar="CSV_FILENAME",
+        type=str,
+        help="Write status & game changes to CSV"
+    )
+    opts.add_argument(
+        "-d", "--disable-logging",
+        dest="disable_logging",
+        action="store_true",
+        help="Disable logging to xbox_monitor_<gamertag>.log"
+    )
+
     args = parser.parse_args()
 
     if len(sys.argv) == 1:
@@ -1029,30 +1155,33 @@ if __name__ == "__main__":
 
     local_tz = None
     if LOCAL_TIMEZONE == "Auto":
-        try:
-            local_tz = get_localzone()
-        except NameError:
-            pass
+        if get_localzone is not None:
+            try:
+                local_tz = get_localzone()
+            except Exception:
+                pass
         if local_tz:
             LOCAL_TIMEZONE = str(local_tz)
         else:
             print("* Error: Cannot detect local timezone, consider setting LOCAL_TIMEZONE to your local timezone manually !")
             sys.exit(1)
+    else:
+        if not is_valid_timezone(LOCAL_TIMEZONE):
+            print(f"* Error: Configured LOCAL_TIMEZONE '{LOCAL_TIMEZONE}' is not valid. Please use a valid pytz timezone name.")
+            sys.exit(1)
 
-    sys.stdout.write("* Checking internet connectivity ... ")
-    sys.stdout.flush()
-    check_internet()
-    print("")
+    if not check_internet():
+        sys.exit(1)
 
-    if args.send_test_email_notification:
+    if args.send_test_email:
         print("* Sending test email notification ...\n")
         if send_email("xbox_monitor: test email", "This is test email - your SMTP settings seems to be correct !", "", SMTP_SSL, smtp_timeout=5) == 0:
-                print("* Email sent successfully !")
+            print("* Email sent successfully !")
         else:
             sys.exit(1)
         sys.exit(0)
 
-    if not args.XBOX_GAMERTAG:
+    if not args.xbox_gamertag:
         print("* Error: XBOX_GAMERTAG needs to be defined !")
         sys.exit(1)
 
@@ -1074,44 +1203,34 @@ if __name__ == "__main__":
         XBOX_CHECK_INTERVAL = args.check_interval
         TOOL_ALIVE_COUNTER = TOOL_ALIVE_INTERVAL / XBOX_CHECK_INTERVAL
 
-    if args.active_check_interval:
-        XBOX_ACTIVE_CHECK_INTERVAL = args.active_check_interval
+    if args.active_interval:
+        XBOX_ACTIVE_CHECK_INTERVAL = args.active_interval
 
     if args.csv_file:
-        csv_enabled = True
-        csv_exists = os.path.isfile(args.csv_file)
         try:
-            csv_file = open(args.csv_file, 'a', newline='', buffering=1, encoding="utf-8")
+            with open(args.csv_file, 'a', newline='', buffering=1, encoding="utf-8") as _:
+                pass
         except Exception as e:
-            print(f"* Error: CSV file cannot be opened for writing - {e}")
+            print(f"* Error, CSV file cannot be opened for writing: {e}")
             sys.exit(1)
-        csv_file.close()
-    else:
-        csv_enabled = False
-        csv_file = None
-        csv_exists = False
 
     if not args.disable_logging:
-        XBOX_LOGFILE = f"{XBOX_LOGFILE}_{args.XBOX_GAMERTAG}.log"
+        XBOX_LOGFILE = f"{XBOX_LOGFILE}_{args.xbox_gamertag}.log"
         sys.stdout = Logger(XBOX_LOGFILE)
 
-    active_inactive_notification = args.active_inactive_notification
-    game_change_notification = args.game_change_notification
-    status_notification = args.status_notification
+    active_inactive_notification = args.notify_active_inactive
+    game_change_notification = args.notify_game_change
+    status_notification = args.notify_status
+    error_notification = args.notify_errors
 
     print(f"* Xbox timers:\t\t\t[check interval: {display_time(XBOX_CHECK_INTERVAL)}] [active check interval: {display_time(XBOX_ACTIVE_CHECK_INTERVAL)}]")
-    print(f"* Email notifications:\t\t[active/inactive status changes = {active_inactive_notification}] [game changes = {game_change_notification}]\n*\t\t\t\t[all status changes = {status_notification}] [errors = {args.error_notification}]")
-    if not args.disable_logging:
-        print(f"* Output logging enabled:\t{not args.disable_logging} ({XBOX_LOGFILE})")
-    else:
-        print(f"* Output logging enabled:\t{not args.disable_logging}")
-    if csv_enabled:
-        print(f"* CSV logging enabled:\t\t{csv_enabled} ({args.csv_file})")
-    else:
-        print(f"* CSV logging enabled:\t\t{csv_enabled}")
+    print(f"* Email notifications:\t\t[active/inactive status changes = {active_inactive_notification}] [game changes = {game_change_notification}]\n*\t\t\t\t[all status changes = {status_notification}] [errors = {error_notification}]")
+    print(f"* Output logging enabled:\t{not args.disable_logging}" + (f" ({XBOX_LOGFILE})" if not args.disable_logging else ""))
+    print(f"* CSV logging enabled:\t\t{bool(args.csv_file)}" + (f" ({args.csv_file})" if args.csv_file else ""))
     print(f"* Local timezone:\t\t{LOCAL_TIMEZONE}")
+    print(f"* Xbox auth token file:\t\t{MS_AUTH_TOKENS_FILE}")
 
-    out = f"\nMonitoring user with Xbox gamer tag {args.XBOX_GAMERTAG}"
+    out = f"\nMonitoring user with Xbox gamer tag {args.xbox_gamertag}"
     print(out)
     print("-" * len(out))
 
@@ -1123,7 +1242,7 @@ if __name__ == "__main__":
         signal.signal(signal.SIGTRAP, increase_active_check_signal_handler)
         signal.signal(signal.SIGABRT, decrease_active_check_signal_handler)
 
-    asyncio.run(xbox_monitor_user(args.XBOX_GAMERTAG, args.error_notification, args.csv_file, csv_exists))
+    asyncio.run(xbox_monitor_user(args.xbox_gamertag, error_notification, args.csv_file))
 
     sys.stdout = stdout_bck
     sys.exit(0)
