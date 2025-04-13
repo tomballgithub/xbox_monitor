@@ -9,10 +9,10 @@ https://github.com/misiektoja/xbox_monitor/
 Python pip3 requirements:
 
 xbox-webapi
-httpx
-python-dateutil
-pytz
 requests
+python-dateutil
+httpx
+pytz
 tzlocal (optional)
 python-dotenv (optional)
 """
@@ -70,27 +70,27 @@ SENDER_EMAIL = "your_sender_email"
 RECEIVER_EMAIL = "your_receiver_email"
 
 # Whether to send an email when user goes online/offline
-# Can also be enabled via the -a parameter
+# Can also be enabled via the -a flag
 ACTIVE_INACTIVE_NOTIFICATION = False
 
 # Whether to send an email on game start/change/stop
-# Can also be enabled via the -g parameter
+# Can also be enabled via the -g flag
 GAME_CHANGE_NOTIFICATION = False
 
-# Whether to send an email on all status changes
-# Can also be enabled via the -s parameter
+# Whether to send an email on all status changes (online/away/offline)
+# Can also be enabled via the -s flag
 STATUS_NOTIFICATION = False
 
 # Whether to send an email on errors
-# Can also be disabled via the -e parameter
+# Can also be disabled via the -e flag
 ERROR_NOTIFICATION = True
 
 # How often to check for player activity when the user is offline; in seconds
-# Can also be set using the -c parameter
+# Can also be set using the -c flag
 XBOX_CHECK_INTERVAL = 300  # 5 min
 
 # How often to check for player activity when the user is online; in seconds
-# Can also be set using the -k parameter
+# Can also be set using the -k flag
 XBOX_ACTIVE_CHECK_INTERVAL = 90  # 1,5 min
 
 # Set your local time zone so that Xbox API timestamps are converted accordingly (e.g. 'Europe/Warsaw').
@@ -100,12 +100,13 @@ XBOX_ACTIVE_CHECK_INTERVAL = 90  # 1,5 min
 LOCAL_TIMEZONE = 'Auto'
 
 # If the user disconnects (offline) and reconnects (online) within OFFLINE_INTERRUPT seconds,
-# the online session start time will be restored to the previous session’s start time (short offline interruption),
+# the online session start time will be restored to the previous session's start time (short offline interruption),
 # and previous session statistics (like total playtime and number of played games) will be preserved
 OFFLINE_INTERRUPT = 420  # 7 mins
 
-# How often to print an "alive check" message to the output; in seconds
-TOOL_ALIVE_INTERVAL = 21600  # 6 hours
+# How often to print a "liveness check" message to the output; in seconds
+# Set to 0 to disable
+LIVENESS_CHECK_INTERVAL = 43200  # 12 hours
 
 # URL used to verify internet connectivity at startup
 CHECK_INTERNET_URL = 'https://user.auth.xboxlive.com/'
@@ -117,20 +118,20 @@ CHECK_INTERNET_TIMEOUT = 5
 MS_AUTH_TOKENS_FILE = "xbox_tokens.json"
 
 # CSV file to write all status & game changes
-# Can also be set using the -b parameter
+# Can also be set using the -b flag
 CSV_FILE = ""
 
 # Location of the optional dotenv file which can keep secrets
 # If not specified it will try to auto-search for .env files
 # To disable auto-search, set this to the literal string "none"
-# Can also be set using the --env-file parameter
+# Can also be set using the --env-file flag
 DOTENV_FILE = ""
 
-# Base name of the log file. The tool will save its output to xbox_monitor_<gamertag>.log file
+# Base name of the log file. The tool will save its output to xbox_monitor_<gamer_tag>.log file
 XBOX_LOGFILE = "xbox_monitor"
 
-# Whether to disable logging to xbox_monitor_<gamertag>.log
-# Can also be disabled via the -d parameter
+# Whether to disable logging to xbox_monitor_<gamer_tag>.log
+# Can also be disabled via the -d flag
 DISABLE_LOGGING = False
 
 # Width of horizontal line (─)
@@ -139,7 +140,8 @@ HORIZONTAL_LINE = 113
 # Whether to clear the terminal screen after starting the tool
 CLEAR_SCREEN = True
 
-# Value used by signal handlers to increase or decrease the online activity check interval (XBOX_ACTIVE_CHECK_INTERVAL); in seconds
+# Value used by signal handlers increasing/decreasing the check for player activity
+# when user is online/away (XBOX_ACTIVE_CHECK_INTERVAL); in seconds
 XBOX_ACTIVE_CHECK_SIGNAL_VALUE = 30  # 30 seconds
 """
 
@@ -148,7 +150,7 @@ XBOX_ACTIVE_CHECK_SIGNAL_VALUE = 30  # 30 seconds
 # -------------------------
 
 # Default dummy values so linters shut up
-# Do not change values below — modify them in the configuration section or config file instead
+# Do not change values below - modify them in the configuration section or config file instead
 MS_APP_CLIENT_ID = ""
 MS_APP_CLIENT_SECRET = ""
 SMTP_HOST = ""
@@ -166,7 +168,7 @@ XBOX_CHECK_INTERVAL = 0
 XBOX_ACTIVE_CHECK_INTERVAL = 0
 LOCAL_TIMEZONE = ""
 OFFLINE_INTERRUPT = 0
-TOOL_ALIVE_INTERVAL = 0
+LIVENESS_CHECK_INTERVAL = 0
 CHECK_INTERNET_URL = ""
 CHECK_INTERNET_TIMEOUT = 0
 MS_AUTH_TOKENS_FILE = ""
@@ -186,7 +188,7 @@ DEFAULT_CONFIG_FILENAME = "xbox_monitor.conf"
 # List of secret keys to load from env/config
 SECRET_KEYS = ("MS_APP_CLIENT_ID", "MS_APP_CLIENT_SECRET", "SMTP_PASSWORD")
 
-TOOL_ALIVE_COUNTER = TOOL_ALIVE_INTERVAL / XBOX_CHECK_INTERVAL
+LIVENESS_CHECK_COUNTER = LIVENESS_CHECK_INTERVAL / XBOX_CHECK_INTERVAL
 
 stdout_bck = None
 csvfieldnames = ['Date', 'Status', 'Game name']
@@ -223,7 +225,7 @@ import csv
 try:
     import pytz
 except ModuleNotFoundError:
-    raise SystemExit("Error: Couldn’t find the pytz library !\n\nTo install it, run:\n    pip3 install pytz\n\nOnce installed, re-run this tool")
+    raise SystemExit("Error: Couldn't find the pytz library !\n\nTo install it, run:\n    pip3 install pytz\n\nOnce installed, re-run this tool")
 try:
     from tzlocal import get_localzone
 except ImportError:
@@ -240,7 +242,7 @@ try:
     from xbox.webapi.common.signed_session import SignedSession
     from xbox.webapi.api.provider.presence.models import PresenceLevel
 except ModuleNotFoundError:
-    raise SystemExit("Error: Couldn’t find the Xbox-WebAPI library !\n\nTo install it, run:\n    pip3 install xbox-webapi\n\nOnce installed, re-run this tool. For more help, visit:\nhttps://github.com/OpenXbox/xbox-webapi-python/")
+    raise SystemExit("Error: Couldn't find the Xbox-WebAPI library !\n\nTo install it, run:\n    pip3 install xbox-webapi\n\nOnce installed, re-run this tool. For more help, visit:\nhttps://github.com/OpenXbox/xbox-webapi-python/")
 import shutil
 from pathlib import Path
 
@@ -918,7 +920,7 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name):
     # Create a XBOX HTTP client session
     async with SignedSession() as session:
 
-        # Initialize with global OAUTH parameters (MS_APP_CLIENT_ID & MS_APP_CLIENT_SECRET)
+        # Initialize with global OAUTH config options (MS_APP_CLIENT_ID & MS_APP_CLIENT_SECRET)
         auth_mgr = AuthenticationManager(session, MS_APP_CLIENT_ID, MS_APP_CLIENT_SECRET, "")
 
         # Read in tokens that we received from the xbox-authenticate script
@@ -953,7 +955,7 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name):
         try:
             profile = await xbl_client.profile.get_profile_by_gamertag(xbox_gamertag)
         except Exception as e:
-            print(f"* Error: Cannot get profile for user {xbox_gamertag}: {e}")
+            print(f"* Error: Cannot get profile for user {xbox_gamertag}{': ' + str(e) if e else ''}")
             sys.exit(1)
 
         if 'profile_users' in dir(profile):
@@ -985,7 +987,7 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name):
         try:
             presence = await xbl_client.presence.get_presence(str(xuid), PresenceLevel.ALL)
         except Exception as e:
-            print(f"* Error: Cannot get presence for user {xbox_gamertag}: {e}")
+            print(f"* Error: Cannot get presence for user {xbox_gamertag}{': ' + str(e) if e else ''}")
             sys.exit(1)
 
         status, title_name, game_name, platform, lastonline_ts = xbox_process_presence_class(presence, False)
@@ -1121,7 +1123,7 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name):
                     sleep_interval = XBOX_ACTIVE_CHECK_INTERVAL
                 else:
                     sleep_interval = XBOX_CHECK_INTERVAL
-                print(f"* Error getting presence, retrying in {display_time(sleep_interval)}: {e}")
+                print(f"* Error getting presence, retrying in {display_time(sleep_interval)}{': ' + str(e) if e else ''}")
                 if 'validation' in str(e) or 'auth' in str(e) or 'token' in str(e):
                     print("* Xbox auth key might not be valid anymore!")
                     if ERROR_NOTIFICATION and not email_sent:
@@ -1277,8 +1279,8 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name):
 
             alive_counter += 1
 
-            if alive_counter >= TOOL_ALIVE_COUNTER and (status == "offline" or not status):
-                print_cur_ts("Alive check, timestamp:\t\t")
+            if LIVENESS_CHECK_COUNTER and alive_counter >= LIVENESS_CHECK_COUNTER and (status == "offline" or not status):
+                print_cur_ts("Liveness check, timestamp:\t")
                 alive_counter = 0
 
             if status and status != "offline":
@@ -1288,7 +1290,7 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name):
 
 
 def main():
-    global CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, TOOL_ALIVE_COUNTER, MS_APP_CLIENT_ID, MS_APP_CLIENT_SECRET, CSV_FILE, DISABLE_LOGGING, XBOX_LOGFILE, ACTIVE_INACTIVE_NOTIFICATION, GAME_CHANGE_NOTIFICATION, STATUS_NOTIFICATION, ERROR_NOTIFICATION, XBOX_CHECK_INTERVAL, XBOX_ACTIVE_CHECK_INTERVAL, SMTP_PASSWORD, stdout_bck, MS_AUTH_TOKENS_FILE
+    global CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_CHECK_COUNTER, MS_APP_CLIENT_ID, MS_APP_CLIENT_SECRET, CSV_FILE, DISABLE_LOGGING, XBOX_LOGFILE, ACTIVE_INACTIVE_NOTIFICATION, GAME_CHANGE_NOTIFICATION, STATUS_NOTIFICATION, ERROR_NOTIFICATION, XBOX_CHECK_INTERVAL, XBOX_ACTIVE_CHECK_INTERVAL, SMTP_PASSWORD, stdout_bck, MS_AUTH_TOKENS_FILE
 
     if "--generate-config" in sys.argv:
         print(CONFIG_BLOCK.strip("\n"))
@@ -1309,7 +1311,7 @@ def main():
 
     parser = argparse.ArgumentParser(
         prog="xbox_monitor",
-        description=("Monitor an Xbox user’s playing status and send customizable email alerts [ https://github.com/misiektoja/xbox_monitor/ ]"), formatter_class=argparse.RawTextHelpFormatter
+        description=("Monitor an Xbox user's playing status and send customizable email alerts [ https://github.com/misiektoja/xbox_monitor/ ]"), formatter_class=argparse.RawTextHelpFormatter
     )
 
     # Positional
@@ -1416,7 +1418,7 @@ def main():
         dest="active_interval",
         metavar="SECONDS",
         type=int,
-        help="Polling interval when user is in game"
+        help="Polling interval when user is online"
     )
 
     # Features & Output
@@ -1540,7 +1542,7 @@ def main():
 
     if args.check_interval:
         XBOX_CHECK_INTERVAL = args.check_interval
-        TOOL_ALIVE_COUNTER = TOOL_ALIVE_INTERVAL / XBOX_CHECK_INTERVAL
+        LIVENESS_CHECK_COUNTER = LIVENESS_CHECK_INTERVAL / XBOX_CHECK_INTERVAL
 
     if args.active_interval:
         XBOX_ACTIVE_CHECK_INTERVAL = args.active_interval
@@ -1598,8 +1600,9 @@ def main():
         STATUS_NOTIFICATION = False
         ERROR_NOTIFICATION = False
 
-    print(f"* Xbox timers:\t\t\t[check interval: {display_time(XBOX_CHECK_INTERVAL)}] [active check interval: {display_time(XBOX_ACTIVE_CHECK_INTERVAL)}]")
-    print(f"* Email notifications:\t\t[active/inactive status changes = {ACTIVE_INACTIVE_NOTIFICATION}] [game changes = {GAME_CHANGE_NOTIFICATION}]\n*\t\t\t\t[all status changes = {STATUS_NOTIFICATION}] [errors = {ERROR_NOTIFICATION}]")
+    print(f"* Xbox polling intervals:\t[offline: {display_time(XBOX_CHECK_INTERVAL)}] [online: {display_time(XBOX_ACTIVE_CHECK_INTERVAL)}]")
+    print(f"* Email notifications:\t\t[online/offline status changes = {ACTIVE_INACTIVE_NOTIFICATION}] [game changes = {GAME_CHANGE_NOTIFICATION}]\n*\t\t\t\t[all status changes = {STATUS_NOTIFICATION}] [errors = {ERROR_NOTIFICATION}]")
+    print(f"* Liveness check:\t\t{bool(LIVENESS_CHECK_INTERVAL)}" + (f" ({display_time(LIVENESS_CHECK_INTERVAL)})" if LIVENESS_CHECK_INTERVAL else ""))
     print(f"* CSV logging enabled:\t\t{bool(CSV_FILE)}" + (f" ({CSV_FILE})" if CSV_FILE else ""))
     print(f"* Output logging enabled:\t{not DISABLE_LOGGING}" + (f" ({FINAL_LOG_PATH})" if not DISABLE_LOGGING else ""))
     print(f"* Configuration file:\t\t{cfg_path}")
