@@ -4,3 +4,4 @@ pytz
 Requests
 tzlocal
 xbox-webapi
+python-dotenv
