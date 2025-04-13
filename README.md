@@ -1,6 +1,6 @@
 # xbox_monitor
 
-xbox_monitor is a tool that allows for real-time monitoring of Xbox Live players' activities.
+xbox_monitor is a tool for real-time monitoring of Xbox Live players' activities.
 
 ## Features
 
@@ -12,71 +12,121 @@ xbox_monitor is a tool that allows for real-time monitoring of Xbox Live players
 - Possibility to control the running copy of the script via signals
 
 <p align="center">
-   <img src="./assets/xbox_monitor.png" alt="xbox_monitor_screenshot" width="90%"/>
+   <img src="./assets/xbox_monitor.png" alt="xbox_monitor_screenshot" width="85%"/>
 </p>
 
-## Change Log
+## Table of Contents
 
-Release notes can be found [here](RELEASE_NOTES.md)
+1. [Requirements](#requirements)
+2. [Installation](#installation)
+   * [Install from PyPI](#install-from-pypi)
+   * [Manual Installation](#manual-installation)
+3. [Quick Start](#quick-start)
+4. [Configuration](#configuration)
+   * [Configuration File](#configuration-file)
+   * [Azure AD App Credentials](#azure-ad-app-credentials)
+   * [User Privacy Settings](#user-privacy-settings)
+   * [Time Zone](#time-zone)
+   * [SMTP Settings](#smtp-settings)
+   * [Storing Secrets](#storing-secrets)
+5. [Usage](#usage)
+   * [Monitoring Mode](#monitoring-mode)
+   * [Email Notifications](#email-notifications)
+   * [CSV Export](#csv-export)
+   * [Check Intervals](#check-intervals)
+   * [Signal Controls (macOS/Linux/Unix)](#signal-controls-macoslinuxunix)
+   * [Coloring Log Output with GRC](#coloring-log-output-with-grc)
+6. [Change Log](#change-log)
+7. [License](#license)
 
 ## Requirements
 
-The tool requires Python 3.8 or higher.
+* Python 3.8 or higher
+* Libraries: [xbox-webapi](https://github.com/OpenXbox/xbox-webapi-python), `requests`, `python-dateutil`, `httpx`, `pytz`, `tzlocal`, `python-dotenv`
 
-It uses [xbox-webapi](https://github.com/OpenXbox/xbox-webapi-python) library, also requests, pytz, tzlocal, httpx and python-dateutil.
+Tested on:
 
-It has been tested successfully on:
-- macOS (Ventura, Sonoma & Sequoia)
-- Linux:
-   - Raspberry Pi OS (Bullseye & Bookworm)
-   - Ubuntu 24
-   - Rocky Linux (8.x, 9.x)
-   - Kali Linux (2024, 2025)
-- Windows (10 & 11)
+* **macOS**: Ventura, Sonoma, Sequoia
+* **Linux**: Raspberry Pi OS (Bullseye, Bookworm), Ubuntu 24, Rocky Linux 8.x/9.x, Kali Linux 2024/2025
+* **Windows**: 10, 11
 
 It should work on other versions of macOS, Linux, Unix and Windows as well.
 
 ## Installation
 
-Install the required Python packages:
+### Install from PyPI
 
 ```sh
-python3 -m pip install requests python-dateutil pytz tzlocal httpx xbox-webapi
+pip install xbox_monitor
 ```
 
-Or from requirements.txt:
+### Manual Installation
+
+Download the *[xbox_monitor.py](xbox_monitor.py)* file to the desired location.
+
+Install dependencies via pip:
 
 ```sh
-pip3 install -r requirements.txt
+pip install xbox-webapi requests python-dateutil httpx pytz tzlocal python-dotenv
 ```
 
-Copy the *[xbox_monitor.py](xbox_monitor.py)* file to the desired location. 
-
-You might want to add executable rights if on Linux/Unix/macOS:
+Alternatively, from the downloaded *[requirements.txt](requirements.txt)*:
 
 ```sh
-chmod a+x xbox_monitor.py
+pip install -r requirements.txt
+```
+
+## Quick Start
+
+- Grab your [Azure app credentials](#azure-ad-new-app-registration) and track the `xbox_gamer_tag` gaming activities:
+
+
+```sh
+xbox_monitor <xbox_gamer_tag> -u "your_ms_application_client_id" -w "your_ms_application_secret_value"
+```
+
+Or if you installed [manually](#manual-installation):
+
+```sh
+python3 xbox_monitor.py <xbox_gamer_tag> -u "your_ms_application_client_id" -w "your_ms_application_secret_value"
+```
+
+To get the list of all supported command-line arguments / flags:
+
+```sh
+xbox_monitor --help
 ```
 
 ## Configuration
 
-Edit the *[xbox_monitor.py](xbox_monitor.py)* file and change any desired configuration variables in the marked **CONFIGURATION SECTION** (all parameters have detailed description in the comments).
+### Configuration File
 
-### Azure AD new app registration
+Most settings can be configured via command-line arguments.
+
+If you want to have it stored persistently, generate a default config template and save it to a file named `xbox_monitor.conf`:
+
+```sh
+xbox_monitor --generate-config > xbox_monitor.conf
+
+```
+
+Edit the `xbox_monitor.conf` file and change any desired configuration options (detailed comments are provided for each).
+
+### Azure AD App Credentials
 
 Log in to [Azure AD](https://portal.azure.com/#blade/Microsoft_AAD_RegisteredApps/ApplicationsListBlade) and register new app.
 
 - Name your app (e.g. *xbox_monitor*)
-- For account type select *"Personal Microsoft accounts only"*
-- For redirect URL select *"Web"* type and put: *http://localhost/auth/callback*
+- For account type select **Personal Microsoft accounts only**
+- For redirect URL select **Web** type and put: **http://localhost/auth/callback**
 
 <p align="center">
    <img src="./assets/xbox_monitor_azure_ad_app1.png" alt="xbox_monitor_azure_ad_app1" width="90%"/>
 </p>
 
-Then copy value of *'Application (client) ID'* to `MS_APP_CLIENT_ID` variable (or use **-u** parameter).
+Then copy value of **Application (client) ID** to `MS_APP_CLIENT_ID`.
 
-Then next to *'Client credentials'* click *'Add a certificate or secret'*.
+Then next to **Client credentials** click **Add a certificate or secret**.
 
 <p align="center">
    <img src="./assets/xbox_monitor_azure_ad_app2.png" alt="xbox_monitor_azure_ad_app2" width="90%"/>
@@ -88,21 +138,37 @@ Add a new client secret with long expiration date (like 2 years) and some descri
    <img src="./assets/xbox_monitor_azure_ad_app3.png" alt="xbox_monitor_azure_ad_app3" width="60%"/>
 </p>
 
-Copy the contents from 'Value' column to `MS_APP_CLIENT_SECRET` variable (or use **-w** parameter).
+Copy the contents from **Value** column to `MS_APP_CLIENT_SECRET`.
 
 <p align="center">
    <img src="./assets/xbox_monitor_azure_ad_app4.png" alt="xbox_monitor_azure_ad_app4" width="100%"/>
 </p>
 
-After performing authentication the token will be saved into a file, type its location and name in `MS_AUTH_TOKENS_FILE` (or use default *xbox_tokens.json* - it will be saved in your currently working dir).
+After performing authentication the token will be saved into the default `xbox_tokens.json` file in current working dir (you can change it via `MS_AUTH_TOKENS_FILE`).
 
-### Timezone
+Provide the `MS_APP_CLIENT_ID` and `MS_APP_CLIENT_SECRET` secrets using one of the following methods:
+ - Pass it at runtime with `-u` / `--ms-app-client-id` and `-w` / `--ms-app-client-secret`
+ - Set it as an [environment variable](#storing-secrets) (e.g. `export MS_APP_CLIENT_ID=...; export MS_APP_CLIENT_SECRET=...`)
+ - Add it to [.env file](#storing-secrets) (`MS_APP_CLIENT_ID=...` and `MS_APP_CLIENT_SECRET=...`) for persistent use
 
-The tool will attempt to automatically detect your local time zone so it can convert Xbox API timestamps to your time. 
+Fallback:
+ - Hard-code it in the code or config file
 
-If you prefer to specify your time zone manually set the `LOCAL_TIMEZONE` variable from *'Auto'* to a specific location, e.g.
+If you store the `MS_APP_CLIENT_ID` and `MS_APP_CLIENT_SECRET` in a dotenv file you can update their values and send a `SIGHUP` signal to the process to reload the file with the new secret values without restarting the tool. More info in [Storing Secrets](#storing-secrets) and [Signal Controls (macOS/Linux/Unix)](#signal-controls-macoslinuxunix).
 
-```
+### User Privacy Settings
+
+In order to monitor Xbox user activity, proper privacy settings need to be enabled on the monitored user account.
+
+The user should go to [Xbox profile privacy & online safety settings](https://account.xbox.com/Settings).
+
+The value in **Others can see if you're online** (and preferably also **Others can see your Xbox profile details**) should be set to **Friends** or **Everyone**. 
+
+### Time Zone
+
+By default, time zone is auto-detected using `tzlocal`. You can set it manually in `xbox_monitor.conf`:
+
+```ini
 LOCAL_TIMEZONE='Europe/Warsaw'
 ```
 
@@ -112,57 +178,83 @@ You can get the list of all time zones supported by pytz like this:
 python3 -c "import pytz; print('\n'.join(pytz.all_timezones))"
 ```
 
-In such case it is not needed to install *tzlocal* pip module.
+### SMTP Settings
 
-### User privacy settings
+If you want to use email notifications functionality, configure SMTP settings in the `xbox_monitor.conf` file. 
 
-In order to monitor Xbox user activity, proper privacy settings need to be enabled on the monitored user account, i.e. in [Xbox profile privacy & online safety settings](https://account.xbox.com/Settings), the value in section *'Others can see if you're online'* (and preferably also *'Others can see your Xbox profile details'*) should be set to *'Friends'* (if you are friends) or to *'Everyone'*. 
-
-### SMTP settings
-
-If you want to use email notifications functionality you need to change the SMTP settings (host, port, user, password, sender, recipient) in the *[xbox_monitor.py](xbox_monitor.py)* file. If you leave the default settings then no notifications will be sent.
-
-You can verify if your SMTP settings are correct by using **-z** parameter (the tool will try to send a test email notification):
+Verify your SMTP settings by using `--send-test-email` flag (the tool will try to send a test email notification):
 
 ```sh
-./xbox_monitor.py -z
+xbox_monitor --send-test-email
 ```
 
-### Other settings
+### Storing Secrets
 
-All other variables can be left at their defaults, but feel free to experiment with it.
+It is recommended to store secrets like `MS_APP_CLIENT_ID`, `MS_APP_CLIENT_SECRET` or `SMTP_PASSWORD` as either an environment variable or in a dotenv file.
 
-## Getting started
-
-### List of supported parameters
-
-To get the list of all supported parameters:
+Set environment variables using `export` on **Linux/Unix/macOS/WSL** systems:
 
 ```sh
-./xbox_monitor.py -h
+export MS_APP_CLIENT_ID="your_ms_application_client_id"
+export MS_APP_CLIENT_SECRET="your_ms_application_secret_value"
+export SMTP_PASSWORD="your_smtp_password"
 ```
 
-or 
+On **Windows Command Prompt** use `set` instead of `export` and on **Windows PowerShell** use `$env`.
+
+Alternatively store them persistently in a dotenv file (recommended):
+
+```ini
+MS_APP_CLIENT_ID="your_ms_application_client_id"
+MS_APP_CLIENT_SECRET="your_ms_application_secret_value"
+SMTP_PASSWORD="your_smtp_password"
+```
+
+By default the tool will auto-search for dotenv file named `.env` in current directory and then upward from it. 
+
+You can specify a custom file with `DOTENV_FILE` or `--env-file` flag:
 
 ```sh
-python3 ./xbox_monitor.py -h
+xbox_monitor <xbox_gamer_tag> --env-file /path/.env-xbox_monitor
 ```
 
-### Monitoring mode
-
-To monitor specific user activity, just type the player's Xbox Live gamer tag (**xbox_gamer_tag** in the example below):
+ You can also disable `.env` auto-search with `DOTENV_FILE = "none"` or `--env-file none`:
 
 ```sh
-./xbox_monitor.py xbox_gamer_tag
+xbox_monitor <xbox_gamer_tag> --env-file none
 ```
 
-If you have not changed `MS_APP_CLIENT_ID` & `MS_APP_CLIENT_SECRET` variables in the *[xbox_monitor.py](xbox_monitor.py)* file, you can use **-u** and **-w** parameters:
+As a fallback, you can also store secrets in the configuration file or source code.
+
+## Usage
+
+### Monitoring Mode
+
+To monitor specific user activity, just type the player's Xbox Live gamer tag (`xbox_gamer_tag` in the example below):
 
 ```sh
-./xbox_monitor.py xbox_gamer_tag -u "your_ms_application_client_id" -w "your_ms_application_secret_value"
+xbox_monitor <xbox_gamer_tag>
 ```
 
-The first time the tool is run it will perform OAuth2 authentication using the data you provided. 
+If you have not set `MS_APP_CLIENT_ID` and `MS_APP_CLIENT_SECRET` secrets, you can use `-u` and `-w` flags:
+
+```sh
+xbox_monitor <xbox_gamer_tag> -u "your_ms_application_client_id" -w "your_ms_application_secret_value"
+```
+
+By default, the tool looks for a configuration file named `xbox_monitor.conf` in:
+ - current directory 
+ - home directory (`~`)
+ - script directory 
+
+ If you generated a configuration file as described in [Configuration](#configuration), but saved it under a different name or in a different directory, you can specify its location using the `--config-file` flag:
+
+
+```sh
+xbox_monitor <xbox_gamer_tag> --config-file /path/xbox_monitor_new.conf
+```
+
+The first time the tool is executed it will perform OAuth2 authentication using the data you provided. 
 
 It will generate a URL you need to paste in your web browser and authorize the tool.
 
@@ -170,44 +262,54 @@ It will generate a URL you need to paste in your web browser and authorize the t
    <img src="./assets/xbox_monitor_oauth1.png" alt="xbox_monitor_oauth1" width="90%"/>
 </p>
 
-The request in your web browser will be redirected to localhost. You will receive an error indicating a connection failure. Ignore this and simply copy the part after '*'?code='* in the callback URL and paste it into the tool.
+The request in your web browser will be redirected to localhost. You will receive an error indicating a connection failure. Ignore this and simply copy the part after `?code=` in the callback URL and paste it into the tool.
 
 <p align="center">
    <img src="./assets/xbox_monitor_oauth2.png" alt="xbox_monitor_oauth2" width="70%"/>
 </p>
 
-The tool will save the token to a file specified in `MS_AUTH_TOKENS_FILE` variable, so it can be reused in case the tool is restarted (with no need to authenticate again).
+The tool will save the token to a file specified in `MS_AUTH_TOKENS_FILE` configuration option, so it can be reused in case the tool is restarted (with no need to authenticate again).
 
-The tool will run indefinitely and monitor the player until the script is interrupted (Ctrl+C) or terminated in another way.
+The tool runs until interrupted (`Ctrl+C`). Use `tmux` or `screen` for persistence.
 
 You can monitor multiple Xbox Live players by running multiple instances of the script.
 
-It is recommended to use something like **tmux** or **screen** to keep the script running after you log out from the server (unless you are running it on your desktop).
+The tool automatically saves its output to `xbox_monitor_<gamer_tag>.log` file. It can be changed in the settings via `XBOX_LOGFILE` configuration option or disabled completely via `DISABLE_LOGGING` / `-d` flag.
 
-The tool automatically saves its output to *xbox_monitor_{gamertag}.log* file (can be changed in the settings via `XBOX_LOGFILE` variable or disabled completely with **-d** parameter).
+The tool also saves the timestamp and last status (after every change) to `xbox_<gamer_tag>_last_status.json` file, so the last status is available after the restart of the tool.
 
-The tool also saves the timestamp and last status (after every change) to *xbox_{gamertag}_last_status.json* file, so the last status is available after the restart of the tool.
+### Email Notifications
 
-## How to use other features
-
-### Email notifications
-
-If you wish to receive email notifications when a user gets online or offline, use the **-a** parameter:
+To enable email notifications when a user gets online or offline:
+- set `ACTIVE_INACTIVE_NOTIFICATION` to `True`
+- or use the `-a` flag
 
 ```sh
-./xbox_monitor.py xbox_gamer_tag -a
+xbox_monitor <xbox_gamer_tag> -a
 ```
 
-If you want to be informed when a user starts, stops or changes the game being played then use the **-g** parameter:
+To be informed when a user starts, stops or changes the played game:
+- set `GAME_CHANGE_NOTIFICATION` to `True`
+- or use the `-g` flag
 
 ```sh
-./xbox_monitor.py xbox_gamer_tag -g
+xbox_monitor <xbox_gamer_tag> -g
 ```
 
-If you also want to be informed about any changes in user status (online/away/offline) use the **-s** parameter (note: the away status seems to be reported only by the Xbox App on Android devices):
+To get email notifications about any changes in user status (online/away/offline):
+- set `STATUS_NOTIFICATION` to `True`
+- or use the `-s` flag
 
 ```sh
-./xbox_monitor.py xbox_gamer_tag -s
+xbox_monitor <xbox_gamer_tag> -s
+```
+
+To disable sending an email on errors (enabled by default):
+- set `ERROR_NOTIFICATION` to `False`
+- or use the `-e` flag
+
+```sh
+xbox_monitor <xbox_gamer_tag> -e
 ```
 
 Make sure you defined your SMTP settings earlier (see [SMTP settings](#smtp-settings)).
@@ -218,25 +320,30 @@ Example email:
    <img src="./assets/xbox_monitor_email_notifications.png" alt="xbox_monitor_email_notifications" width="80%"/>
 </p>
 
-### Saving activity to the CSV file
+### CSV Export
 
-If you want to save all reported activities of the Xbox Live user, use the **-b** parameter with the name of the file (it will be automatically created if it does not exist):
-
-```sh
-./xbox_monitor.py xbox_gamer_tag -b xbox_gamer_tag.csv
-```
-
-### Check intervals
-
-If you want to change the check interval for when the user is online or away to 30 seconds, use the **-k** parameter and for when the user is offline to 2 minutes (120 seconds) use the **-c** parameter.
+If you want to save all reported activities of the Xbox Live user to a CSV file, set `CSV_FILE` or use `-b` flag:
 
 ```sh
-./xbox_monitor.py xbox_gamer_tag -k 30 -c 120
+xbox_monitor <xbox_gamer_tag> -b xbox_gamer_tag.csv
 ```
 
-### Controlling the script via signals (only macOS/Linux/Unix)
+The file will be automatically created if it does not exist.
 
-The tool has several signal handlers implemented which allow to change behavior of the tool without a need to restart it with new parameters.
+### Check Intervals
+
+If you want to customize polling intervals, use `-k` and `-c` flags (or corresponding configuration options):
+
+```sh
+xbox_monitor <xbox_gamer_tag> -k 30 -c 120
+```
+
+* `XBOX_ACTIVE_CHECK_INTERVAL`, `-k`: check interval when the user is online or away (seconds)
+* `XBOX_CHECK_INTERVAL`, `-c`: check interval when the user is offline (seconds)
+
+### Signal Controls (macOS/Linux/Unix)
+
+The tool has several signal handlers implemented which allow to change behavior of the tool without a need to restart it with new configuration options / flags.
 
 List of supported signals:
 
@@ -247,28 +354,21 @@ List of supported signals:
 | CONT | Toggle email notifications for all user status changes (online/away/offline) (-s) |
 | TRAP | Increase the check timer for player activity when user is online (by 30 seconds) |
 | ABRT | Decrease check timer for player activity when user is online (by 30 seconds) |
+| HUP | Reload secrets from .env file |
 
-So if you want to change functionality of the running tool, just send the proper signal to the desired copy of the script.
-
-I personally use the **pkill** tool. For example, to toggle email notifications when a user gets online or offline for the tool instance monitoring the *xbox_gamer_tag* user:
+Send signals with `kill` or `pkill`, e.g.:
 
 ```sh
-pkill -f -USR1 "python3 ./xbox_monitor.py xbox_gamer_tag"
+pkill -USR1 -f "xbox_monitor <xbox_gamer_tag>"
 ```
 
 As Windows supports limited number of signals, this functionality is available only on Linux/Unix/macOS.
 
-### Other
+### Coloring Log Output with GRC
 
-Check other supported parameters using **-h**.
+You can use [GRC](https://github.com/garabik/grc) to color logs.
 
-You can combine all the parameters mentioned earlier.
-
-## Coloring log output with GRC
-
-If you use [GRC](https://github.com/garabik/grc) and want to have the tool's log output properly colored you can use the configuration file available [here](grc/conf.monitor_logs)
-
-Change your grc configuration (typically *.grc/grc.conf*) and add this part:
+Add to your GRC config (`~/.grc/grc.conf`):
 
 ```
 # monitoring log file
@@ -276,8 +376,18 @@ Change your grc configuration (typically *.grc/grc.conf*) and add this part:
 conf.monitor_logs
 ```
 
-Now copy the *conf.monitor_logs* to your *.grc* directory and xbox_monitor log files should be nicely colored when using *grc* tool.
+Now copy the [conf.monitor_logs](grc/conf.monitor_logs) to your `~/.grc/` and log files should be nicely colored when using `grc` tool.
+
+Example:
+
+```sh
+grc tail -F -n 100 xbox_monitor_<gamer_tag>.log
+```
+
+## Change Log
+
+See [RELEASE_NOTES.md](RELEASE_NOTES.md) for details.
 
 ## License
 
-This project is licensed under the GPLv3 - see the [LICENSE](LICENSE) file for details
+Licensed under GPLv3. See [LICENSE](LICENSE).
