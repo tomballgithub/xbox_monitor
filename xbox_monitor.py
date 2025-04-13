@@ -12,8 +12,9 @@ xbox-webapi
 httpx
 python-dateutil
 pytz
-tzlocal
 requests
+tzlocal (optional)
+python-dotenv (optional)
 """
 
 VERSION = 1.6
@@ -22,6 +23,7 @@ VERSION = 1.6
 # CONFIGURATION SECTION START
 # ---------------------------
 
+CONFIG_BLOCK = """
 # Register a new app in Azure AD:
 # https://portal.azure.com/#blade/Microsoft_AAD_RegisteredApps/ApplicationsListBlade
 #
@@ -29,16 +31,36 @@ VERSION = 1.6
 # - For account type, select: "Personal Microsoft accounts only"
 # - For redirect URL, select "Web" and set it to: http://localhost/auth/callback
 #
-# Copy the value of 'Application (client) ID' into MS_APP_CLIENT_ID below (or use the -u parameter)
+# Copy the value of 'Application (client) ID'
+#
+# Provide the MS_APP_CLIENT_ID secret using one of the following methods:
+#   - Pass it at runtime with -u / --ms-app-client-id
+#   - Set it as an environment variable (e.g. export MS_APP_CLIENT_ID=...)
+#   - Add it to ".env" file (MS_APP_CLIENT_ID=...) for persistent use
+# Fallback:
+#   - Hard-code it in the code or config file
 MS_APP_CLIENT_ID = "your_ms_application_client_id"
 
 # Next to 'Client credentials' click 'Add a certificate or secret'
 # - Add a new client secret with a long expiration (e.g. 2 years) and a description (e.g. xbox_monitor_secret)
-# - Copy the 'Value' of the secret and assign it to MS_APP_CLIENT_SECRET below (or use the -w parameter)
+# - Copy the 'Value' of the secret
+#
+# Provide the MS_APP_CLIENT_SECRET secret using one of the following methods:
+#   - Pass it at runtime with -w / --ms-app-client-secret
+#   - Set it as an environment variable (e.g. export MS_APP_CLIENT_SECRET=...)
+#   - Add it to ".env" file (MS_APP_CLIENT_SECRET=...) for persistent use
+# Fallback:
+#   - Hard-code it in the code or config file
 MS_APP_CLIENT_SECRET = "your_ms_application_secret_value"
 
 # SMTP settings for sending email notifications
 # If left as-is, no notifications will be sent
+#
+# Provide the SMTP_PASSWORD secret using one of the following methods:
+#   - Set it as an environment variable (e.g. export SMTP_PASSWORD=...)
+#   - Add it to ".env" file (SMTP_PASSWORD=...) for persistent use
+# Fallback:
+#   - Hard-code it in the code or config file
 SMTP_HOST = "your_smtp_server_ssl"
 SMTP_PORT = 587
 SMTP_USER = "your_smtp_user"
@@ -46,6 +68,22 @@ SMTP_PASSWORD = "your_smtp_password"
 SMTP_SSL = True
 SENDER_EMAIL = "your_sender_email"
 RECEIVER_EMAIL = "your_receiver_email"
+
+# Whether to send an email when user goes online/offline
+# Can also be enabled via the -a parameter
+ACTIVE_INACTIVE_NOTIFICATION = False
+
+# Whether to send an email on game start/change/stop
+# Can also be enabled via the -g parameter
+GAME_CHANGE_NOTIFICATION = False
+
+# Whether to send an email on all status changes
+# Can also be enabled via the -s parameter
+STATUS_NOTIFICATION = False
+
+# Whether to send an email on errors
+# Can also be disabled via the -e parameter
+ERROR_NOTIFICATION = True
 
 # How often to check for player activity when the user is offline; in seconds
 # Can also be set using the -c parameter
@@ -57,17 +95,14 @@ XBOX_ACTIVE_CHECK_INTERVAL = 90  # 1,5 min
 
 # Set your local time zone so that Xbox API timestamps are converted accordingly (e.g. 'Europe/Warsaw').
 # Use this command to list all time zones supported by pytz:
-# python3 -c "import pytz; print('\n'.join(pytz.all_timezones))"
-# If set to 'Auto', the tool will try to detect your local time zone automatically
+#   python3 -c "import pytz; print('\\n'.join(pytz.all_timezones))"
+# If set to 'Auto', the tool will try to detect your local time zone automatically (requires tzlocal)
 LOCAL_TIMEZONE = 'Auto'
 
 # If the user disconnects (offline) and reconnects (online) within OFFLINE_INTERRUPT seconds,
 # the online session start time will be restored to the previous session’s start time (short offline interruption),
 # and previous session statistics (like total playtime and number of played games) will be preserved
 OFFLINE_INTERRUPT = 420  # 7 mins
-
-# After authentication, the access token will be saved to the following file
-MS_AUTH_TOKENS_FILE = "xbox_tokens.json"
 
 # How often to print an "alive check" message to the output; in seconds
 TOOL_ALIVE_INTERVAL = 21600  # 6 hours
@@ -78,30 +113,85 @@ CHECK_INTERNET_URL = 'https://user.auth.xboxlive.com/'
 # Timeout used when checking initial internet connectivity; in seconds
 CHECK_INTERNET_TIMEOUT = 5
 
+# After authentication, the access token will be saved to the following file
+MS_AUTH_TOKENS_FILE = "xbox_tokens.json"
+
+# CSV file to write all status & game changes
+# Can also be set using the -b parameter
+CSV_FILE = ""
+
+# Location of the optional dotenv file which can keep secrets
+# If not specified it will try to auto-search for .env files
+# To disable auto-search, set this to the literal string "none"
+# Can also be set using the --env-file parameter
+DOTENV_FILE = ""
+
 # Base name of the log file. The tool will save its output to xbox_monitor_<gamertag>.log file
 XBOX_LOGFILE = "xbox_monitor"
 
-# Value used by signal handlers to increase or decrease the online activity check interval (XBOX_ACTIVE_CHECK_INTERVAL); in seconds
-XBOX_ACTIVE_CHECK_SIGNAL_VALUE = 30  # 30 seconds
+# Whether to disable logging to xbox_monitor_<gamertag>.log
+# Can also be disabled via the -d parameter
+DISABLE_LOGGING = False
+
+# Width of horizontal line (─)
+HORIZONTAL_LINE = 113
 
 # Whether to clear the terminal screen after starting the tool
 CLEAR_SCREEN = True
+
+# Value used by signal handlers to increase or decrease the online activity check interval (XBOX_ACTIVE_CHECK_INTERVAL); in seconds
+XBOX_ACTIVE_CHECK_SIGNAL_VALUE = 30  # 30 seconds
+"""
 
 # -------------------------
 # CONFIGURATION SECTION END
 # -------------------------
 
-# Width of horizontal line (─)
-HORIZONTAL_LINE = 105
+# Default dummy values so linters shut up
+# Do not change values below — modify them in the configuration section or config file instead
+MS_APP_CLIENT_ID = ""
+MS_APP_CLIENT_SECRET = ""
+SMTP_HOST = ""
+SMTP_PORT = 0
+SMTP_USER = ""
+SMTP_PASSWORD = ""
+SMTP_SSL = False
+SENDER_EMAIL = ""
+RECEIVER_EMAIL = ""
+ACTIVE_INACTIVE_NOTIFICATION = False
+GAME_CHANGE_NOTIFICATION = False
+STATUS_NOTIFICATION = False
+ERROR_NOTIFICATION = False
+XBOX_CHECK_INTERVAL = 0
+XBOX_ACTIVE_CHECK_INTERVAL = 0
+LOCAL_TIMEZONE = ""
+OFFLINE_INTERRUPT = 0
+TOOL_ALIVE_INTERVAL = 0
+CHECK_INTERNET_URL = ""
+CHECK_INTERNET_TIMEOUT = 0
+MS_AUTH_TOKENS_FILE = ""
+CSV_FILE = ""
+DOTENV_FILE = ""
+XBOX_LOGFILE = ""
+DISABLE_LOGGING = False
+HORIZONTAL_LINE = 0
+CLEAR_SCREEN = False
+XBOX_ACTIVE_CHECK_SIGNAL_VALUE = 0
+
+exec(CONFIG_BLOCK, globals())
+
+# Default name for the optional config file
+DEFAULT_CONFIG_FILENAME = "xbox_monitor.conf"
+
+# List of secret keys to load from env/config
+SECRET_KEYS = ("MS_APP_CLIENT_ID", "MS_APP_CLIENT_SECRET", "SMTP_PASSWORD")
 
 TOOL_ALIVE_COUNTER = TOOL_ALIVE_INTERVAL / XBOX_CHECK_INTERVAL
 
 stdout_bck = None
 csvfieldnames = ['Date', 'Status', 'Game name']
 
-active_inactive_notification = False
-game_change_notification = False
-status_notification = False
+CLI_CONFIG_PATH = None
 
 # to solve the issue: 'SyntaxError: f-string expression part cannot include a backslash'
 nl_ch = "\n"
@@ -130,7 +220,10 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 import argparse
 import csv
-import pytz
+try:
+    import pytz
+except ModuleNotFoundError:
+    raise SystemExit("Error: Couldn’t find the pytz library !\n\nTo install it, run:\n    pip3 install pytz\n\nOnce installed, re-run this tool")
 try:
     from tzlocal import get_localzone
 except ImportError:
@@ -140,11 +233,16 @@ import re
 import ipaddress
 import asyncio
 from httpx import HTTPStatusError
-from xbox.webapi.api.client import XboxLiveClient
-from xbox.webapi.authentication.manager import AuthenticationManager
-from xbox.webapi.authentication.models import OAuth2TokenResponse
-from xbox.webapi.common.signed_session import SignedSession
-from xbox.webapi.api.provider.presence.models import PresenceLevel
+try:
+    from xbox.webapi.api.client import XboxLiveClient
+    from xbox.webapi.authentication.manager import AuthenticationManager
+    from xbox.webapi.authentication.models import OAuth2TokenResponse
+    from xbox.webapi.common.signed_session import SignedSession
+    from xbox.webapi.api.provider.presence.models import PresenceLevel
+except ModuleNotFoundError:
+    raise SystemExit("Error: Couldn’t find the Xbox-WebAPI library !\n\nTo install it, run:\n    pip3 install xbox-webapi\n\nOnce installed, re-run this tool. For more help, visit:\nhttps://github.com/OpenXbox/xbox-webapi-python/")
+import shutil
+from pathlib import Path
 
 
 # Logger class to output messages to stdout and log file
@@ -391,7 +489,7 @@ def write_csv_entry(csv_file_name, timestamp, status, gamename):
             csvwriter = csv.DictWriter(csv_file, fieldnames=csvfieldnames, quoting=csv.QUOTE_NONNUMERIC)
             csvwriter.writerow({'Date': timestamp, 'Status': status, 'Game name': gamename})
 
-    except Exception:
+    except Exception as e:
         raise RuntimeError(f"Failed to write to CSV file '{csv_file_name}': {e}")
 
 
@@ -580,31 +678,31 @@ def is_valid_timezone(tz_name):
 
 # Signal handler for SIGUSR1 allowing to switch active/inactive email notifications
 def toggle_active_inactive_notifications_signal_handler(sig, frame):
-    global active_inactive_notification
-    active_inactive_notification = not active_inactive_notification
+    global ACTIVE_INACTIVE_NOTIFICATION
+    ACTIVE_INACTIVE_NOTIFICATION = not ACTIVE_INACTIVE_NOTIFICATION
     sig_name = signal.Signals(sig).name
     print(f"* Signal {sig_name} received")
-    print(f"* Email notifications: [active/inactive status changes = {active_inactive_notification}]")
+    print(f"* Email notifications: [active/inactive status changes = {ACTIVE_INACTIVE_NOTIFICATION}]")
     print_cur_ts("Timestamp:\t\t\t")
 
 
 # Signal handler for SIGUSR2 allowing to switch played game changes notifications
 def toggle_game_change_notifications_signal_handler(sig, frame):
-    global game_change_notification
-    game_change_notification = not game_change_notification
+    global GAME_CHANGE_NOTIFICATION
+    GAME_CHANGE_NOTIFICATION = not GAME_CHANGE_NOTIFICATION
     sig_name = signal.Signals(sig).name
     print(f"* Signal {sig_name} received")
-    print(f"* Email notifications: [game changes = {game_change_notification}]")
+    print(f"* Email notifications: [game changes = {GAME_CHANGE_NOTIFICATION}]")
     print_cur_ts("Timestamp:\t\t\t")
 
 
 # Signal handler for SIGCONT allowing to switch all status changes notifications
 def toggle_all_status_changes_notifications_signal_handler(sig, frame):
-    global status_notification
-    status_notification = not status_notification
+    global STATUS_NOTIFICATION
+    STATUS_NOTIFICATION = not STATUS_NOTIFICATION
     sig_name = signal.Signals(sig).name
     print(f"* Signal {sig_name} received")
-    print(f"* Email notifications: [all status changes = {status_notification}]")
+    print(f"* Email notifications: [all status changes = {STATUS_NOTIFICATION}]")
     print_cur_ts("Timestamp:\t\t\t")
 
 
@@ -626,6 +724,41 @@ def decrease_active_check_signal_handler(sig, frame):
     sig_name = signal.Signals(sig).name
     print(f"* Signal {sig_name} received")
     print(f"* Xbox timers: [active check interval: {display_time(XBOX_ACTIVE_CHECK_INTERVAL)}]")
+    print_cur_ts("Timestamp:\t\t\t")
+
+
+# Signal handler for SIGHUP allowing to reload secrets from .env
+def reload_secrets_signal_handler(sig, frame):
+    sig_name = signal.Signals(sig).name
+    print(f"* Signal {sig_name} received")
+
+    # disable autoscan if DOTENV_FILE set to none
+    if DOTENV_FILE and DOTENV_FILE.lower() == 'none':
+        env_path = None
+    else:
+        # reload .env if python-dotenv is installed
+        try:
+            from dotenv import load_dotenv, find_dotenv
+            if DOTENV_FILE:
+                env_path = DOTENV_FILE
+            else:
+                env_path = find_dotenv()
+            if env_path:
+                load_dotenv(env_path, override=True)
+            else:
+                print("* No .env file found, skipping env-var reload")
+        except ImportError:
+            env_path = None
+            print("* python-dotenv not installed, skipping env-var reload")
+
+    if env_path:
+        for secret in SECRET_KEYS:
+            old_val = globals().get(secret)
+            val = os.getenv(secret)
+            if val is not None and val != old_val:
+                globals()[secret] = val
+                print(f"* Reloaded {secret} from {env_path}")
+
     print_cur_ts("Timestamp:\t\t\t")
 
 
@@ -715,8 +848,46 @@ def xbox_process_presence_class(presence, platform_short=True):
     return status, title_name, game_name, platform, lastonline_ts
 
 
+# Finds an optional config file
+def find_config_file(cli_path=None):
+    """
+    Search for an optional config file in:
+      1) CLI-provided path (must exist if given)
+      2) ./{DEFAULT_CONFIG_FILENAME}
+      3) ~/.{DEFAULT_CONFIG_FILENAME}
+      4) script-directory/{DEFAULT_CONFIG_FILENAME}
+    """
+
+    if cli_path:
+        p = Path(os.path.expanduser(cli_path))
+        return str(p) if p.is_file() else None
+
+    candidates = [
+        Path.cwd() / DEFAULT_CONFIG_FILENAME,
+        Path.home() / f".{DEFAULT_CONFIG_FILENAME}",
+        Path(__file__).parent / DEFAULT_CONFIG_FILENAME,
+    ]
+
+    for p in candidates:
+        if p.is_file():
+            return str(p)
+    return None
+
+
+# Resolves an executable path by checking if it's a valid file or searching in $PATH
+def resolve_executable(path):
+    if os.path.isfile(path) and os.access(path, os.X_OK):
+        return path
+
+    found = shutil.which(path)
+    if found:
+        return found
+
+    raise FileNotFoundError(f"Could not find executable '{path}'")
+
+
 # Main function that monitors activity of the specified Xbox user
-async def xbox_monitor_user(xbox_gamertag, error_notification, csv_file_name):
+async def xbox_monitor_user(xbox_gamertag, csv_file_name):
 
     alive_counter = 0
     status_ts = 0
@@ -782,7 +953,7 @@ async def xbox_monitor_user(xbox_gamertag, error_notification, csv_file_name):
         try:
             profile = await xbl_client.profile.get_profile_by_gamertag(xbox_gamertag)
         except Exception as e:
-            print(f"* Error, cannot get profile for user {xbox_gamertag}: {e}")
+            print(f"* Error: Cannot get profile for user {xbox_gamertag}: {e}")
             sys.exit(1)
 
         if 'profile_users' in dir(profile):
@@ -790,7 +961,7 @@ async def xbox_monitor_user(xbox_gamertag, error_notification, csv_file_name):
             try:
                 xuid = int(profile.profile_users[0].id)
             except IndexError:
-                print(f"* Error: cannot get XUID for user {xbox_gamertag}")
+                print(f"* Error: Cannot get XUID for user {xbox_gamertag}")
                 sys.exit(1)
 
             location_tmp = next((x for x in profile.profile_users[0].settings if x.id == "Location"), None)
@@ -807,20 +978,20 @@ async def xbox_monitor_user(xbox_gamertag, error_notification, csv_file_name):
                     realname = realname_tmp.value
 
         if xuid == 0:
-            print(f"* Error: cannot get XUID for user {xbox_gamertag}")
+            print(f"* Error: Cannot get XUID for user {xbox_gamertag}")
             sys.exit(1)
 
         # Get presence status (by XUID)
         try:
             presence = await xbl_client.presence.get_presence(str(xuid), PresenceLevel.ALL)
         except Exception as e:
-            print(f"* Error, cannot get presence for user {xbox_gamertag}: {e}")
+            print(f"* Error: Cannot get presence for user {xbox_gamertag}: {e}")
             sys.exit(1)
 
         status, title_name, game_name, platform, lastonline_ts = xbox_process_presence_class(presence, False)
 
         if not status:
-            print(f"* Error: cannot get status for user {xbox_gamertag}")
+            print(f"* Error: Cannot get status for user {xbox_gamertag}")
             sys.exit(1)
 
         status_ts_old = int(time.time())
@@ -953,7 +1124,7 @@ async def xbox_monitor_user(xbox_gamertag, error_notification, csv_file_name):
                 print(f"* Error getting presence, retrying in {display_time(sleep_interval)}: {e}")
                 if 'validation' in str(e) or 'auth' in str(e) or 'token' in str(e):
                     print("* Xbox auth key might not be valid anymore!")
-                    if error_notification and not email_sent:
+                    if ERROR_NOTIFICATION and not email_sent:
                         m_subject = f"xbox_monitor: Xbox auth key error! (user: {xbox_gamertag})"
                         m_body = f"Xbox auth key might not be valid anymore: {e}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
                         print(f"Sending email notification to {RECEIVER_EMAIL}")
@@ -1042,7 +1213,7 @@ async def xbox_monitor_user(xbox_gamertag, error_notification, csv_file_name):
                 if platform:
                     platform_str = f"{platform}, "
                 m_subject = f"Xbox user {xbox_gamertag} is now {status} ({platform_str}after {m_subject_after}{m_subject_was_since})"
-                if status_notification or (active_inactive_notification and act_inact_flag):
+                if STATUS_NOTIFICATION or (ACTIVE_INACTIVE_NOTIFICATION and act_inact_flag):
                     print(f"Sending email notification to {RECEIVER_EMAIL}")
                     send_email(m_subject, m_body, "", SMTP_SSL)
 
@@ -1085,7 +1256,7 @@ async def xbox_monitor_user(xbox_gamertag, error_notification, csv_file_name):
 
                 change = True
 
-                if game_change_notification and m_subject and m_body:
+                if GAME_CHANGE_NOTIFICATION and m_subject and m_body:
                     print(f"Sending email notification to {RECEIVER_EMAIL}")
                     send_email(m_subject, m_body, "", SMTP_SSL)
 
@@ -1115,7 +1286,17 @@ async def xbox_monitor_user(xbox_gamertag, error_notification, csv_file_name):
             else:
                 time.sleep(XBOX_CHECK_INTERVAL)
 
-if __name__ == "__main__":
+
+def main():
+    global CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, TOOL_ALIVE_COUNTER, MS_APP_CLIENT_ID, MS_APP_CLIENT_SECRET, CSV_FILE, DISABLE_LOGGING, XBOX_LOGFILE, ACTIVE_INACTIVE_NOTIFICATION, GAME_CHANGE_NOTIFICATION, STATUS_NOTIFICATION, ERROR_NOTIFICATION, XBOX_CHECK_INTERVAL, XBOX_ACTIVE_CHECK_INTERVAL, SMTP_PASSWORD, stdout_bck, MS_AUTH_TOKENS_FILE
+
+    if "--generate-config" in sys.argv:
+        print(CONFIG_BLOCK.strip("\n"))
+        sys.exit(0)
+
+    if "--version" in sys.argv:
+        print(f"{os.path.basename(sys.argv[0])} v{VERSION}")
+        sys.exit(0)
 
     stdout_bck = sys.stdout
 
@@ -1128,7 +1309,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(
         prog="xbox_monitor",
-        description="Monitor an Xbox user’s playing status and send customizable email alerts [ https://github.com/misiektoja/xbox_monitor/ ]"
+        description=("Monitor an Xbox user’s playing status and send customizable email alerts [ https://github.com/misiektoja/xbox_monitor/ ]"), formatter_class=argparse.RawTextHelpFormatter
     )
 
     # Positional
@@ -1138,6 +1319,33 @@ if __name__ == "__main__":
         metavar="XBOX_GAMERTAG",
         help="User's Xbox gamer tag",
         type=str
+    )
+
+    # Version, just to list in help, it is handled earlier
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s v{VERSION}"
+    )
+
+    # Configuration & dotenv files
+    conf = parser.add_argument_group("Configuration & dotenv files")
+    conf.add_argument(
+        "--config-file",
+        dest="config_file",
+        metavar="PATH",
+        help="Location of the optional config file",
+    )
+    conf.add_argument(
+        "--generate-config",
+        action="store_true",
+        help="Print default config template and exit",
+    )
+    conf.add_argument(
+        "--env-file",
+        dest="env_file",
+        metavar="PATH",
+        help="Path to optional dotenv file (auto-search if not set, disable with 'none')",
     )
 
     # API credentials
@@ -1163,28 +1371,32 @@ if __name__ == "__main__":
         "-a", "--notify-active-inactive",
         dest="notify_active_inactive",
         action="store_true",
+        default=None,
         help="Email when user goes online/offline"
     )
     notify.add_argument(
         "-g", "--notify-game-change",
         dest="notify_game_change",
         action="store_true",
+        default=None,
         help="Email on game start/change/stop"
     )
     notify.add_argument(
         "-s", "--notify-status",
         dest="notify_status",
         action="store_true",
+        default=None,
         help="Email on all status changes"
     )
     notify.add_argument(
         "-e", "--no-error-notify",
         dest="notify_errors",
         action="store_false",
+        default=None,
         help="Disable email on errors"
     )
     notify.add_argument(
-        "-z", "--send-test-email",
+        "--send-test-email",
         dest="send_test_email",
         action="store_true",
         help="Send test email to verify SMTP settings"
@@ -1220,6 +1432,7 @@ if __name__ == "__main__":
         "-d", "--disable-logging",
         dest="disable_logging",
         action="store_true",
+        default=None,
         help="Disable logging to xbox_monitor_<gamertag>.log"
     )
 
@@ -1228,6 +1441,56 @@ if __name__ == "__main__":
     if len(sys.argv) == 1:
         parser.print_help(sys.stderr)
         sys.exit(1)
+
+    if args.config_file:
+        CLI_CONFIG_PATH = os.path.expanduser(args.config_file)
+
+    cfg_path = find_config_file(CLI_CONFIG_PATH)
+
+    if not cfg_path and CLI_CONFIG_PATH:
+        print(f"* Error: Config file '{CLI_CONFIG_PATH}' does not exist")
+        sys.exit(1)
+
+    if cfg_path:
+        try:
+            with open(cfg_path, "r") as cf:
+                exec(cf.read(), globals())
+        except Exception as e:
+            print(f"* Error loading config file '{cfg_path}': {e}")
+            sys.exit(1)
+
+    if args.env_file:
+        DOTENV_FILE = os.path.expanduser(args.env_file)
+    else:
+        if DOTENV_FILE:
+            DOTENV_FILE = os.path.expanduser(DOTENV_FILE)
+
+    if DOTENV_FILE and DOTENV_FILE.lower() == 'none':
+        env_path = None
+    else:
+        try:
+            from dotenv import load_dotenv, find_dotenv
+
+            if DOTENV_FILE:
+                env_path = DOTENV_FILE
+                if not os.path.isfile(env_path):
+                    print(f"* Warning: dotenv file '{env_path}' does not exist\n")
+                else:
+                    load_dotenv(env_path, override=True)
+            else:
+                env_path = find_dotenv() or None
+                if env_path:
+                    load_dotenv(env_path, override=True)
+        except ImportError:
+            env_path = DOTENV_FILE if DOTENV_FILE else None
+            if env_path:
+                print(f"* Warning: Cannot load dotenv file '{env_path}' because 'python-dotenv' is not installed\n\nTo install it, run:\n    pip3 install python-dotenv\n\nOnce installed, re-run this tool\n")
+
+    if env_path:
+        for secret in SECRET_KEYS:
+            val = os.getenv(secret)
+            if val is not None:
+                globals()[secret] = val
 
     local_tz = None
     if LOCAL_TIMEZONE == "Auto":
@@ -1282,29 +1545,67 @@ if __name__ == "__main__":
     if args.active_interval:
         XBOX_ACTIVE_CHECK_INTERVAL = args.active_interval
 
+    if not MS_AUTH_TOKENS_FILE:
+        print("* Error: MS_AUTH_TOKENS_FILE value is empty")
+        sys.exit(1)
+    else:
+        MS_AUTH_TOKENS_FILE = os.path.expanduser(MS_AUTH_TOKENS_FILE)
+
     if args.csv_file:
+        CSV_FILE = os.path.expanduser(args.csv_file)
+    else:
+        if CSV_FILE:
+            CSV_FILE = os.path.expanduser(CSV_FILE)
+
+    if CSV_FILE:
         try:
-            with open(args.csv_file, 'a', newline='', buffering=1, encoding="utf-8") as _:
+            with open(CSV_FILE, 'a', newline='', buffering=1, encoding="utf-8") as _:
                 pass
         except Exception as e:
-            print(f"* Error, CSV file cannot be opened for writing: {e}")
+            print(f"* Error: CSV file cannot be opened for writing: {e}")
             sys.exit(1)
 
-    if not args.disable_logging:
-        XBOX_LOGFILE = f"{XBOX_LOGFILE}_{args.xbox_gamertag}.log"
-        sys.stdout = Logger(XBOX_LOGFILE)
+    if args.disable_logging is True:
+        DISABLE_LOGGING = True
 
-    active_inactive_notification = args.notify_active_inactive
-    game_change_notification = args.notify_game_change
-    status_notification = args.notify_status
-    error_notification = args.notify_errors
+    if not DISABLE_LOGGING:
+        log_path = Path(os.path.expanduser(XBOX_LOGFILE))
+        if log_path.is_dir():
+            raise SystemExit(f"* Error: XBOX_LOGFILE '{log_path}' is a directory, expected a filename")
+        if log_path.suffix == "":
+            log_path = log_path.with_name(f"{log_path.name}_{args.xbox_gamertag}.log")
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        FINAL_LOG_PATH = str(log_path)
+        sys.stdout = Logger(FINAL_LOG_PATH)
+    else:
+        FINAL_LOG_PATH = None
+
+    if args.notify_active_inactive is True:
+        ACTIVE_INACTIVE_NOTIFICATION = True
+
+    if args.notify_game_change is True:
+        GAME_CHANGE_NOTIFICATION = True
+
+    if args.notify_status is True:
+        STATUS_NOTIFICATION = True
+
+    if args.notify_errors is False:
+        ERROR_NOTIFICATION = False
+
+    if SMTP_HOST.startswith("your_smtp_server_"):
+        ACTIVE_INACTIVE_NOTIFICATION = False
+        GAME_CHANGE_NOTIFICATION = False
+        STATUS_NOTIFICATION = False
+        ERROR_NOTIFICATION = False
 
     print(f"* Xbox timers:\t\t\t[check interval: {display_time(XBOX_CHECK_INTERVAL)}] [active check interval: {display_time(XBOX_ACTIVE_CHECK_INTERVAL)}]")
-    print(f"* Email notifications:\t\t[active/inactive status changes = {active_inactive_notification}] [game changes = {game_change_notification}]\n*\t\t\t\t[all status changes = {status_notification}] [errors = {error_notification}]")
-    print(f"* Output logging enabled:\t{not args.disable_logging}" + (f" ({XBOX_LOGFILE})" if not args.disable_logging else ""))
-    print(f"* CSV logging enabled:\t\t{bool(args.csv_file)}" + (f" ({args.csv_file})" if args.csv_file else ""))
-    print(f"* Local timezone:\t\t{LOCAL_TIMEZONE}")
+    print(f"* Email notifications:\t\t[active/inactive status changes = {ACTIVE_INACTIVE_NOTIFICATION}] [game changes = {GAME_CHANGE_NOTIFICATION}]\n*\t\t\t\t[all status changes = {STATUS_NOTIFICATION}] [errors = {ERROR_NOTIFICATION}]")
+    print(f"* CSV logging enabled:\t\t{bool(CSV_FILE)}" + (f" ({CSV_FILE})" if CSV_FILE else ""))
+    print(f"* Output logging enabled:\t{not DISABLE_LOGGING}" + (f" ({FINAL_LOG_PATH})" if not DISABLE_LOGGING else ""))
+    print(f"* Configuration file:\t\t{cfg_path}")
+    print(f"* Dotenv file:\t\t\t{env_path or 'None'}")
     print(f"* Xbox auth token file:\t\t{MS_AUTH_TOKENS_FILE}")
+    print(f"* Local timezone:\t\t{LOCAL_TIMEZONE}")
 
     out = f"\nMonitoring user with Xbox gamer tag {args.xbox_gamertag}"
     print(out)
@@ -1317,8 +1618,13 @@ if __name__ == "__main__":
         signal.signal(signal.SIGCONT, toggle_all_status_changes_notifications_signal_handler)
         signal.signal(signal.SIGTRAP, increase_active_check_signal_handler)
         signal.signal(signal.SIGABRT, decrease_active_check_signal_handler)
+        signal.signal(signal.SIGHUP, reload_secrets_signal_handler)
 
-    asyncio.run(xbox_monitor_user(args.xbox_gamertag, error_notification, args.csv_file))
+    asyncio.run(xbox_monitor_user(args.xbox_gamertag, CSV_FILE))
 
     sys.stdout = stdout_bck
     sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()
