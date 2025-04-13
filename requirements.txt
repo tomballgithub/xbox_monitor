@@ -1,7 +1,7 @@
-httpx
-python_dateutil
-pytz
-Requests
-tzlocal
 xbox-webapi
+requests
+python-dateutil
+httpx
+pytz
+tzlocal
 python-dotenv
