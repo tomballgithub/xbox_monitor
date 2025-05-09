@@ -127,7 +127,8 @@ CSV_FILE = ""
 # Can also be set using the --env-file flag
 DOTENV_FILE = ""
 
-# Base name of the log file. The tool will save its output to xbox_monitor_<gamer_tag>.log file
+# Base name for the log file. Output will be saved to xbox_monitor_<gamer_tag>.log
+# Can include a directory path to specify the location, e.g. ~/some_dir/xbox_monitor
 XBOX_LOGFILE = "xbox_monitor"
 
 # Whether to disable logging to xbox_monitor_<gamer_tag>.log
@@ -1572,10 +1573,12 @@ def main():
 
     if not DISABLE_LOGGING:
         log_path = Path(os.path.expanduser(XBOX_LOGFILE))
-        if log_path.is_dir():
-            raise SystemExit(f"* Error: XBOX_LOGFILE '{log_path}' is a directory, expected a filename")
-        if log_path.suffix == "":
-            log_path = log_path.with_name(f"{log_path.name}_{args.xbox_gamertag}.log")
+        if log_path.parent != Path('.'):
+            if log_path.suffix == "":
+                log_path = log_path.parent / f"{log_path.name}_{args.xbox_gamertag}.log"
+        else:
+            if log_path.suffix == "":
+                log_path = Path(f"{log_path.name}_{args.xbox_gamertag}.log")
         log_path.parent.mkdir(parents=True, exist_ok=True)
         FINAL_LOG_PATH = str(log_path)
         sys.stdout = Logger(FINAL_LOG_PATH)
