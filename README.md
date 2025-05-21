@@ -85,7 +85,7 @@ pip install -r requirements.txt
 <a id="quick-start"></a>
 ## Quick Start
 
-- Grab your [Azure app credentials](#azure-ad-new-app-registration) and track the `xbox_gamer_tag` gaming activities:
+- Grab your [Azure app credentials](#azure-ad-app-credentials) and track the `xbox_gamer_tag` gaming activities:
 
 
 ```sh
