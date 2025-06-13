@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v1.6
+v1.6.1
 
 Tool implementing real-time tracking of Xbox Live players activities:
 https://github.com/misiektoja/xbox_monitor/
@@ -17,7 +17,7 @@ tzlocal (optional)
 python-dotenv (optional)
 """
 
-VERSION = 1.6
+VERSION = "1.6.1"
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -135,7 +135,7 @@ XBOX_LOGFILE = "xbox_monitor"
 # Can also be disabled via the -d flag
 DISABLE_LOGGING = False
 
-# Width of horizontal line (─)
+# Width of horizontal line
 HORIZONTAL_LINE = 113
 
 # Whether to clear the terminal screen after starting the tool
