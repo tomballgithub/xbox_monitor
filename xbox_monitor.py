@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v1.6.1
+v1.6.2
 
 Tool implementing real-time tracking of Xbox Live players activities:
 https://github.com/misiektoja/xbox_monitor/
@@ -17,7 +17,7 @@ tzlocal (optional)
 python-dotenv (optional)
 """
 
-VERSION = "1.6.1"
+VERSION = "1.6.2"
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -930,10 +930,10 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name):
                 tokens = f.read()
             auth_mgr.oauth = OAuth2TokenResponse.model_validate_json(tokens)
         except FileNotFoundError as e:
-            print(f"* File {MS_AUTH_TOKENS_FILE} not found or doesn't contain tokens! Error: {e}")
-            print("\nAuthorizing via OAUTH ...")
+            print(f"* File {MS_AUTH_TOKENS_FILE} not found or doesn't contain cached tokens! Error: {e}")
+            print("\nAuthorizing via OAuth ...")
             url = auth_mgr.generate_authorization_url()
-            print(f"\nAuth via URL (paste in your web browser):\n{url}")
+            print(f"\nOpen this URL in your web browser to authorize:\n{url}")
             authorization_code = input("\nEnter authorization code (part after '?code=' in callback URL): ")
             tokens = await auth_mgr.request_oauth_token(authorization_code)
             auth_mgr.oauth = tokens
@@ -1608,9 +1608,9 @@ def main():
     print(f"* Liveness check:\t\t{bool(LIVENESS_CHECK_INTERVAL)}" + (f" ({display_time(LIVENESS_CHECK_INTERVAL)})" if LIVENESS_CHECK_INTERVAL else ""))
     print(f"* CSV logging enabled:\t\t{bool(CSV_FILE)}" + (f" ({CSV_FILE})" if CSV_FILE else ""))
     print(f"* Output logging enabled:\t{not DISABLE_LOGGING}" + (f" ({FINAL_LOG_PATH})" if not DISABLE_LOGGING else ""))
+    print(f"* Xbox token cache file:\t\t{MS_AUTH_TOKENS_FILE or 'None'}")
     print(f"* Configuration file:\t\t{cfg_path}")
     print(f"* Dotenv file:\t\t\t{env_path or 'None'}")
-    print(f"* Xbox auth token file:\t\t{MS_AUTH_TOKENS_FILE}")
     print(f"* Local timezone:\t\t{LOCAL_TIMEZONE}")
 
     out = f"\nMonitoring user with Xbox gamer tag {args.xbox_gamertag}"
