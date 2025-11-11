@@ -24,6 +24,7 @@ xbox_monitor is a tool for real-time monitoring of **Xbox Live players' activiti
 2. [Installation](#installation)
    * [Install from PyPI](#install-from-pypi)
    * [Manual Installation](#manual-installation)
+   * [Upgrading](#upgrading)
 3. [Quick Start](#quick-start)
 4. [Configuration](#configuration)
    * [Configuration File](#configuration-file)
@@ -82,6 +83,17 @@ Alternatively, from the downloaded *[requirements.txt](https://raw.githubusercon
 ```sh
 pip install -r requirements.txt
 ```
+
+<a id="upgrading"></a>
+### Upgrading
+
+To upgrade to the latest version when installed from PyPI:
+
+```sh
+pip install xbox_monitor -U
+```
+
+If you installed manually, download the newest *[xbox_monitor.py](https://raw.githubusercontent.com/misiektoja/xbox_monitor/refs/heads/main/xbox_monitor.py)* file to replace your existing installation.
 
 <a id="quick-start"></a>
 ## Quick Start
