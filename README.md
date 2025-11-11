@@ -5,13 +5,13 @@ xbox_monitor is a tool for real-time monitoring of **Xbox Live players' activiti
 <a id="features"></a>
 ## Features
 
-- Real-time tracking of Xbox Live users' gaming activity (including detection when a user gets online or offline and played games)
-- Basic statistics for user activity (how long in different states, how long a game is played, overall time and number of played games in the session etc.)
-- Email notifications for different events (player gets online, away or offline and starts, finishes or changes a game, errors)
-- Saving all user activities with timestamps to a CSV file
-- Built-in OAuth2 authentication
-- Possibility to control the running copy of the script via signals
-- Functional, procedural Python (minimal OOP)
+- **Real-time tracking** of Xbox Live users' gaming activity (including detection when a user gets online or offline and played games)
+- **Basic statistics for user activity** (how long in different states, how long a game is played, overall time and number of played games in the session etc.)
+- **Email notifications** for different events (player gets online, away or offline and starts, finishes or changes a game, errors)
+- **Saving all user activities** with timestamps to a **CSV file**
+- Built-in **OAuth2 authentication**
+- Possibility to **control the running copy** of the script via signals
+- **Functional, procedural Python** (minimal OOP)
 
 <p align="center">
    <img src="https://raw.githubusercontent.com/misiektoja/xbox_monitor/refs/heads/main/assets/xbox_monitor.png" alt="xbox_monitor_screenshot" width="85%"/>
