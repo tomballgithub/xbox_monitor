@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v1.6.2
+v1.7
 
 Tool implementing real-time tracking of Xbox Live players activities:
 https://github.com/misiektoja/xbox_monitor/
@@ -17,7 +17,7 @@ tzlocal (optional)
 python-dotenv (optional)
 """
 
-VERSION = "1.6.2"
+VERSION = "1.7"
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -189,7 +189,7 @@ DEFAULT_CONFIG_FILENAME = "xbox_monitor.conf"
 # List of secret keys to load from env/config
 SECRET_KEYS = ("MS_APP_CLIENT_ID", "MS_APP_CLIENT_SECRET", "SMTP_PASSWORD")
 
-LIVENESS_CHECK_COUNTER = LIVENESS_CHECK_INTERVAL / XBOX_CHECK_INTERVAL
+LIVENESS_CHECK_COUNTER = LIVENESS_CHECK_INTERVAL / XBOX_CHECK_INTERVAL if XBOX_CHECK_INTERVAL > 0 else 0
 
 stdout_bck = None
 csvfieldnames = ['Date', 'Status', 'Game name']
@@ -522,7 +522,7 @@ def convert_iso_str_to_datetime(dt_str):
 
 # Returns the current date/time in human readable format; eg. Sun 21 Apr 2024, 15:08:45
 def get_cur_ts(ts_str=""):
-    return (f'{ts_str}{calendar.day_abbr[(now_local_naive()).weekday()]}, {now_local_naive().strftime("%d %b %Y, %H:%M:%S")}')
+    return (f'{ts_str}{calendar.day_abbr[(now_local_naive()).weekday()]} {now_local_naive().strftime("%d %b %Y, %H:%M:%S")}')
 
 
 # Prints the current date/time in human readable format with separator; eg. Sun 21 Apr 2024, 15:08:45
@@ -767,12 +767,13 @@ def reload_secrets_signal_handler(sig, frame):
 
 # Returns mapping of platform code name to recognizable name
 def xbox_get_platform_mapping(platform, short=True):
-    if ("scarlett" or "anaconda" or "starkville" or "lockhart" or "edith") in str(platform).lower():
+    platform_lower = str(platform).lower()
+    if any(x in platform_lower for x in ["scarlett", "anaconda", "starkville", "lockhart", "edith"]):
         if short:
             platform = "XSX"
         else:
             platform = "Xbox One Series X/S"
-    elif ("scorpio" or "edmonton") in str(platform).lower():
+    elif any(x in platform_lower for x in ["scorpio", "edmonton"]):
         if short:
             platform = "XONEX"
         else:
@@ -1109,7 +1110,7 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name):
         else:
             sleep_interval = XBOX_CHECK_INTERVAL
 
-        time.sleep(sleep_interval)
+        await asyncio.sleep(sleep_interval)
 
         # Main loop
         while True:
@@ -1134,7 +1135,7 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name):
                         send_email(m_subject, m_body, "", SMTP_SSL)
                         email_sent = True
                 print_cur_ts("Timestamp:\t\t\t")
-                time.sleep(sleep_interval)
+                await asyncio.sleep(sleep_interval)
                 continue
 
             change = False
@@ -1285,9 +1286,9 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name):
                 alive_counter = 0
 
             if status and status != "offline":
-                time.sleep(XBOX_ACTIVE_CHECK_INTERVAL)
+                await asyncio.sleep(XBOX_ACTIVE_CHECK_INTERVAL)
             else:
-                time.sleep(XBOX_CHECK_INTERVAL)
+                await asyncio.sleep(XBOX_CHECK_INTERVAL)
 
 
 def main():
@@ -1543,7 +1544,7 @@ def main():
 
     if args.check_interval:
         XBOX_CHECK_INTERVAL = args.check_interval
-        LIVENESS_CHECK_COUNTER = LIVENESS_CHECK_INTERVAL / XBOX_CHECK_INTERVAL
+        LIVENESS_CHECK_COUNTER = LIVENESS_CHECK_INTERVAL / XBOX_CHECK_INTERVAL if XBOX_CHECK_INTERVAL > 0 else 0
 
     if args.active_interval:
         XBOX_ACTIVE_CHECK_INTERVAL = args.active_interval
@@ -1615,7 +1616,7 @@ def main():
 
     out = f"\nMonitoring user with Xbox gamer tag {args.xbox_gamertag}"
     print(out)
-    print("-" * len(out))
+    print("─" * len(out))
 
     # We define signal handlers only for Linux, Unix & MacOS since Windows has limited number of signals supported
     if platform.system() != 'Windows':
