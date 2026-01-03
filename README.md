@@ -10,6 +10,9 @@ xbox_monitor is a tool for real-time monitoring of **Xbox Live players' activiti
 - **Email notifications** for different events (player gets online, away or offline and starts, finishes or changes a game, errors)
 - **Saving all user activities** with timestamps to a **CSV file**
 - Built-in **OAuth2 authentication**
+- **Status persistence** - automatically saves last status to JSON file to resume monitoring after restart
+- **Smart session continuity** - handles short offline interruptions and preserves session statistics
+- **Flexible configuration** - support for config files, dotenv files, environment variables and command-line arguments
 - Possibility to **control the running copy** of the script via signals
 - **Functional, procedural Python** (minimal OOP)
 
@@ -186,7 +189,7 @@ In order to monitor Xbox user activity, proper privacy settings need to be enabl
 
 The user should go to [Xbox profile privacy & online safety settings](https://account.xbox.com/Settings).
 
-The value in **Others can see if you're online** (and preferably also **Others can see your Xbox profile details**) should be set to **Friends** or **Everyone**. 
+The value in **Others can see if you're online** (and preferably also **Others can see your Xbox profile details**) should be set to **Friends** or **Everyone**.
 
 <a id="time-zone"></a>
 ### Time Zone
@@ -206,7 +209,7 @@ python3 -c "import pytz; print('\n'.join(pytz.all_timezones))"
 <a id="smtp-settings"></a>
 ### SMTP Settings
 
-If you want to use email notifications functionality, configure SMTP settings in the `xbox_monitor.conf` file. 
+If you want to use email notifications functionality, configure SMTP settings in the `xbox_monitor.conf` file.
 
 Verify your SMTP settings by using `--send-test-email` flag (the tool will try to send a test email notification):
 
@@ -237,7 +240,7 @@ MS_APP_CLIENT_SECRET="your_ms_application_secret_value"
 SMTP_PASSWORD="your_smtp_password"
 ```
 
-By default the tool will auto-search for dotenv file named `.env` in current directory and then upward from it. 
+By default the tool will auto-search for dotenv file named `.env` in current directory and then upward from it.
 
 You can specify a custom file with `DOTENV_FILE` or `--env-file` flag:
 
@@ -272,9 +275,9 @@ xbox_monitor <xbox_gamer_tag> -u "your_ms_application_client_id" -w "your_ms_app
 ```
 
 By default, the tool looks for a configuration file named `xbox_monitor.conf` in:
- - current directory 
+ - current directory
  - home directory (`~`)
- - script directory 
+ - script directory
 
  If you generated a configuration file as described in [Configuration](#configuration), but saved it under a different name or in a different directory, you can specify its location using the `--config-file` flag:
 
@@ -283,7 +286,7 @@ By default, the tool looks for a configuration file named `xbox_monitor.conf` in
 xbox_monitor <xbox_gamer_tag> --config-file /path/xbox_monitor_new.conf
 ```
 
-The first time the tool is executed it will perform OAuth2 authentication using the data you provided. 
+The first time the tool is executed it will perform OAuth2 authentication using the data you provided.
 
 It will generate a URL you need to paste in your web browser and authorize the tool.
 
