@@ -1,6 +1,14 @@
 # xbox_monitor release notes
 
-This is a high-level summary of the most important changes. 
+This is a high-level summary of the most important changes.
+
+# Changes in 1.7 (03 Jan 2026)
+
+**Bug fixes**:
+
+- **BUGFIX:** Fixed **platform detection logic bug** where only the first platform name in the check was being evaluated (**Xbox Series X/S detection**)
+- **BUGFIX:** Replaced blocking `time.sleep()` calls with `await asyncio.sleep()` in **async function** to prevent **event loop blocking**
+- **BUGFIX:** Added protection against **division by zero** when calculating `LIVENESS_CHECK_COUNTER` if `XBOX_CHECK_INTERVAL` is set to 0
 
 # Changes in 1.6.1 (13 Jun 2025)
 
@@ -82,7 +90,7 @@ This is a high-level summary of the most important changes.
 - **NEW:** Support for detecting games played by users (player starts/stops or changes the played game)
 - **NEW:** Support for detecting status changes reported by Xbox app on mobile devices (Android & iOS/iPadOS)
 - **NEW:** Support for Away status on Android devices (Xbox consoles, Windows and iOS devices do not report it)
-- **IMPROVE:** Information about played games added to email notifications and CSV file 
+- **IMPROVE:** Information about played games added to email notifications and CSV file
 - **NEW:** Possibility to define MS_APP_CLIENT_ID via command line argument (-u / --ms_app_client_id)
 - **NEW:** Possibility to define MS_APP_CLIENT_SECRET via command line argument (-w / --ms_app_client_secret)
 - **NEW:** New command line argument -g / --game_change_notification + SIGUSR2 signal handler to cover game changes notifications
