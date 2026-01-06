@@ -307,7 +307,7 @@ xbox_monitor <xbox_gamer_tag> -i -r -m 10 -n 5
 ```
 
 <p align="center">
-   <img src="https://raw.githubusercontent.com/misiektoja/xbox_monitor/refs/heads/main/assets/xbox_monitor_info.png" alt="xbox_monitor_info" width="90%"/>
+   <img src="https://raw.githubusercontent.com/misiektoja/xbox_monitor/refs/heads/main/assets/xbox_monitor_info.png" alt="xbox_monitor_info" width="100%"/>
 </p>
 
 <a id="monitoring-mode"></a>
