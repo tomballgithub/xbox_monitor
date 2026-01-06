@@ -7,9 +7,10 @@ xbox_monitor is a tool for real-time monitoring of **Xbox Live players' activiti
 
 - **Real-time tracking** of Xbox Live users' gaming activity (including detection when a user gets online or offline and played games)
 - **Basic statistics for user activity** (how long in different states, how long a game is played, overall time and number of played games in the session etc.)
+- **Detailed user information** display mode providing comprehensive Xbox profile insights, including **XUID**, **online status** and **last online date**, **platform information**, **account tier** (Game Pass Core/Ultimate or Free), **gamerscore**, **real name**, **location**, **friends count** and optionally **friends list** with activity details, **recently played games** with **last played date** and **total play time**, and **recently earned achievements**
 - **Email notifications** for different events (player gets online, away or offline and starts, finishes or changes a game, errors)
 - **Saving all user activities** with timestamps to a **CSV file**
-- Built-in **OAuth2 authentication**
+- **Built-in OAuth2 authentication** with manual authorization support
 - **Status persistence** - automatically saves last status to JSON file to resume monitoring after restart
 - **Smart session continuity** - handles short offline interruptions and preserves session statistics
 - **Flexible configuration** - support for config files, dotenv files, environment variables and command-line arguments
@@ -37,6 +38,7 @@ xbox_monitor is a tool for real-time monitoring of **Xbox Live players' activiti
    * [SMTP Settings](#smtp-settings)
    * [Storing Secrets](#storing-secrets)
 5. [Usage](#usage)
+   * [User Information Display Mode](#user-information-display-mode)
    * [Monitoring Mode](#monitoring-mode)
    * [Email Notifications](#email-notifications)
    * [CSV Export](#csv-export)
@@ -258,6 +260,55 @@ As a fallback, you can also store secrets in the configuration file or source co
 
 <a id="usage"></a>
 ## Usage
+
+<a id="user-information-display-mode"></a>
+### User Information Display Mode
+
+The tool provides a detailed user information display mode that shows comprehensive Xbox profile insights. This mode displays information once and then exits (it does not run continuous monitoring).
+
+To get detailed user information for Xbox user's gamer tag (`xbox_gamer_tag` in the example below), use the `-i` or `--info` flag:
+
+```sh
+xbox_monitor <xbox_gamer_tag> -i
+```
+
+If you have not set `MS_APP_CLIENT_ID` and `MS_APP_CLIENT_SECRET` secrets, you can use `-u` and `-w` flags:
+
+```sh
+xbox_monitor <xbox_gamer_tag> -i -u "your_ms_application_client_id" -w "your_ms_application_secret_value"
+```
+
+This displays:
+- Gamertag and XUID
+- Real name and Location (if available)
+- Account Tier (Game Pass Core/Ultimate or Free)
+- Gamerscore
+- Online status and last online timestamp
+- Platform information
+- Friends count
+- Recently played games with last played date and total play time
+
+To also list all friends and their current activity, add the `-f` or `--friends` flag:
+
+```sh
+xbox_monitor <xbox_gamer_tag> -i --friends
+```
+
+To also display the list of most recently earned achievements, add the `-r` or `--recent-achievements` flag:
+
+```sh
+xbox_monitor <xbox_gamer_tag> -i --recent-achievements
+```
+
+You can limit the number of displayed items using `-m` (for games) and `-n` (for achievements):
+
+```sh
+xbox_monitor <xbox_gamer_tag> -i -r -m 10 -n 5
+```
+
+<p align="center">
+   <img src="https://raw.githubusercontent.com/misiektoja/xbox_monitor/refs/heads/main/assets/xbox_monitor_info.png" alt="xbox_monitor_info" width="90%"/>
+</p>
 
 <a id="monitoring-mode"></a>
 ### Monitoring Mode
