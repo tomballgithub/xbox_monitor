@@ -2,6 +2,17 @@
 
 This is a high-level summary of the most important changes.
 
+# Changes in 1.8 (06 Jan 2026)
+
+**Features and Improvements**:
+
+- **NEW:** Added **User Information Display Mode** (`-i` / `--info`) providing comprehensive Xbox profile insights, including **XUID**, **real name**, **location**, **account tier** (Game Pass Core/Ultimate or Free), **gamerscore**, **online status**, **last online date**, **platform information**, and **friends count**
+- **NEW:** Added **friends list display** in info mode (via `-f` / `--friends` flag) with presence details (game/activity)
+- **NEW:** Added **recently played games** display in info mode with **last played date** and **total play time** for each title
+- **NEW:** Added **recent achievements** display in info mode (via `-r` / `--recent-achievements` flag)
+- **NEW:** Added command-line arguments to limit output: `-n` / `--achievements-count` and `-m` / `--games-count`
+- **IMPROVE:** Added **step-by-step progress messages** during startup/fetching with status indicators
+
 # Changes in 1.7 (03 Jan 2026)
 
 **Bug fixes**:
