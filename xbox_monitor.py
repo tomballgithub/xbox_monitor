@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v1.7
+v1.8
 
 Tool implementing real-time tracking of Xbox Live players activities:
 https://github.com/misiektoja/xbox_monitor/
@@ -17,7 +17,7 @@ tzlocal (optional)
 python-dotenv (optional)
 """
 
-VERSION = "1.7"
+VERSION = "1.8"
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -207,8 +207,8 @@ if sys.version_info < (3, 8):
     sys.exit(1)
 
 import time
-import string
 import json
+from typing import List, cast
 import os
 from datetime import datetime, timezone
 from dateutil import relativedelta
@@ -242,6 +242,9 @@ try:
     from xbox.webapi.authentication.models import OAuth2TokenResponse
     from xbox.webapi.common.signed_session import SignedSession
     from xbox.webapi.api.provider.presence.models import PresenceLevel
+    from xbox.webapi.api.provider.people.models import PeopleDecoration
+    from xbox.webapi.api.provider.titlehub.models import TitleFields
+    from xbox.webapi.api.provider.userstats.models import GeneralStatsField
 except ModuleNotFoundError:
     raise SystemExit("Error: Couldn't find the Xbox-WebAPI library !\n\nTo install it, run:\n    pip3 install xbox-webapi\n\nOnce installed, re-run this tool. For more help, visit:\nhttps://github.com/OpenXbox/xbox-webapi-python/")
 import shutil
@@ -512,7 +515,11 @@ def convert_iso_str_to_datetime(dt_str):
         return None
 
     try:
-        utc_dt = isoparse(dt_str)
+        if isinstance(dt_str, datetime):
+            utc_dt = dt_str
+        else:
+            utc_dt = isoparse(dt_str)
+
         if utc_dt.tzinfo is None:
             utc_dt = pytz.utc.localize(utc_dt)
         return utc_dt.astimezone(pytz.timezone(LOCAL_TIMEZONE))
@@ -852,7 +859,339 @@ def xbox_process_presence_class(presence, platform_short=True):
     return status, title_name, game_name, platform, lastonline_ts
 
 
-# Finds an optional config file
+# Gets detailed user information and displays it (for -i/--info mode)
+async def get_user_info(gamertag, client=None, show_friends=False, show_recent_achievements=False, show_recent_games=False, achievements_count=5, games_count=10):
+
+    # Helper to print step message
+    def print_step(msg):
+        sys.stdout.write(f"- {msg}".ljust(32))
+        sys.stdout.flush()
+
+    # Helper to print OK
+    def print_ok():
+        print("OK")
+
+    if not client:
+        print(f"* Fetching details for Xbox user '{gamertag}'...\n")
+
+    session = None
+
+    if not client:
+        print_step("Authenticating with Xbox...")
+        try:
+            session = SignedSession()
+            auth_mgr = AuthenticationManager(session, MS_APP_CLIENT_ID, MS_APP_CLIENT_SECRET, "")
+            try:
+                with open(MS_AUTH_TOKENS_FILE) as f:
+                    tokens = f.read()
+                auth_mgr.oauth = OAuth2TokenResponse.model_validate_json(tokens)
+            except FileNotFoundError as e:
+                print(f"\n* File {MS_AUTH_TOKENS_FILE} not found or doesn't contain cached tokens! Error: {e}")
+                print("\nAuthorizing via OAuth ...")
+                url = auth_mgr.generate_authorization_url()
+                print(f"\nOpen this URL in your web browser to authorize:\n{url}")
+                authorization_code = input("\nEnter authorization code (part after '?code=' in callback URL): ")
+                tokens = await auth_mgr.request_oauth_token(authorization_code)
+                auth_mgr.oauth = tokens
+
+            # Refresh tokens, just in case
+            try:
+                await auth_mgr.refresh_tokens()
+            except HTTPStatusError as e:
+                print(f"* Could not refresh tokens from {MS_AUTH_TOKENS_FILE}! Error: {e}\nYou might have to delete the tokens file and re-authenticate if refresh token is expired")
+                sys.exit(1)
+
+            # Save the refreshed/updated tokens
+            with open(MS_AUTH_TOKENS_FILE, mode="w") as f:
+                f.write(auth_mgr.oauth.model_dump_json())
+
+            xbl_client = XboxLiveClient(auth_mgr)
+        except Exception as e:
+            print(f"\n* Error: {e}")
+            if session:
+                await session.aclose()
+            sys.exit(1)
+        print_ok()
+    else:
+        xbl_client = client
+
+    print_step("Fetching profile info...")
+    try:
+        profile = await xbl_client.profile.get_profile_by_gamertag(gamertag)
+        if not profile.profile_users:
+            print(f"\n* Error: Cannot get profile for user {gamertag}")
+            if session:
+                await session.aclose()
+            sys.exit(1)
+
+        user_obj = profile.profile_users[0]
+        xuid = user_obj.id
+
+        # Extract settings
+        location = next((x.value for x in user_obj.settings if x.id == "Location"), "")
+        bio = next((x.value for x in user_obj.settings if x.id == "Bio"), "")
+        realname = next((x.value for x in user_obj.settings if x.id == "RealNameOverride"), "")
+        gamerscore = next((x.value for x in user_obj.settings if x.id == "Gamerscore"), "0")
+        tier = next((x.value for x in user_obj.settings if x.id == "AccountTier"), "")
+        avatar = next((x.value for x in user_obj.settings if x.id == "GameDisplayPicRaw"), "")
+
+    except Exception as e:
+        print(f"\n* Error: {e}")
+        if session:
+            await session.aclose()
+        sys.exit(1)
+    print_ok()
+
+    print_step("Fetching presence info...")
+    try:
+        presence = await xbl_client.presence.get_presence(str(xuid), PresenceLevel.ALL)
+        status, title_name, game_name, platform, lastonline_ts = xbox_process_presence_class(presence, False)
+    except Exception as e:
+        print(f"\n* Error: Cannot get presence for user {gamertag}: {e}")
+        if session:
+            await session.aclose()
+        sys.exit(1)
+    print_ok()
+
+    # Friends
+    friends_count = 0
+    friends_list = []
+    print_step("Fetching friends info...")
+    try:
+        try:
+            friends_response = await xbl_client.people.get_friends_own(decoration=[PeopleDecoration.PRESENCE_DETAIL])
+            friends_list = friends_response.people
+            friends_count = len(friends_list)
+        except Exception:
+            friends_response = await xbl_client.people.get_friends_by_xuid(xuid)
+            friends_list = friends_response.people
+            friends_count = len(friends_list)
+
+    except Exception as e:
+        print(f"Warning: Could not fetch friends: {e}")
+    print_ok()
+
+    # Title History (Recent Games)
+    recent_games = []
+
+    # Fetch history if we need to show recent games OR recent achievements (since we use games to look up achievements)
+    if show_recent_games or show_recent_achievements:
+        print_step("Fetching game history...")
+        try:
+            # Requesting details including ServiceConfigId (needed for stats) and Image
+            history_response = await xbl_client.titlehub.get_title_history(
+                xuid,
+                fields=[TitleFields.ACHIEVEMENT, TitleFields.SERVICE_CONFIG_ID, TitleFields.IMAGE],
+                max_items=max(20, games_count)
+            )
+            if history_response.titles:
+                recent_games = history_response.titles[:]
+        except Exception as e:
+            print(f"Warning: Could not fetch game history: {e}")
+        print_ok()
+
+    # Recent Achievements
+    recent_achievements = []
+    if show_recent_achievements:
+        print_step("Fetching achievements...")
+        try:
+            ach_response = await xbl_client.achievements.get_achievements_xboxone_recent_progress_and_info(xuid)
+            recent_achievements = ach_response
+        except Exception as e:
+            print(f"Warning: Could not fetch achievements: {e}")
+        print_ok()
+
+    # Map Account Tier to descriptive text
+    tier_lower = tier.lower() if tier else ""
+    if tier_lower == "gold":
+        tier_str = "Gold (Xbox Game Pass Core/Ultimate)"
+    elif tier_lower == "silver":
+        tier_str = "Silver (Free)"
+    else:
+        tier_str = tier
+
+    print()
+    print(f"Gamertag:\t\t\t{gamertag}")
+    print(f"XUID:\t\t\t\t{xuid}")
+    if realname:
+        print(f"Real name:\t\t\t{realname}")
+    if location:
+        print(f"Location:\t\t\t{location}")
+
+    if tier:
+        print(f"\nAccount Tier:\t\t\t{tier_str}")
+    if gamerscore:
+        if not tier:
+            print()
+        print(f"Gamerscore:\t\t\t{gamerscore}")
+
+    print(f"\nStatus:\t\t\t\t{str(status).upper()}")
+    if status.lower() == "offline":
+        if lastonline_ts > 0:
+            print(f"Last online:\t\t\t{get_date_from_ts(lastonline_ts)}")
+    else:
+        if game_name:
+            print(f"Current game:\t\t\t{game_name}")
+        if platform:
+            print(f"Platform:\t\t\t{platform}")
+
+    print(f"\nFriends count:\t\t\t{friends_count}")
+    if show_friends and friends_list:
+        print("\nFriends list:\n")
+        for friend in friends_list:
+            f_status = "Offline"
+            if friend.presence_state == "Online":
+                f_status = "Online"
+                if friend.presence_details:
+                    # try to get game
+                    for d in friend.presence_details:
+                        if d.presence_text:
+                            f_status += f" ({d.presence_text})"
+                            break
+            print(f"{friend.gamertag.ljust(30)} {f_status}")
+
+    # Helper function to shorten string
+    def _shorten_middle(s, max_len, ellipsis="..."):
+        if s is None:
+            return ""
+        s = str(s)
+        if len(s) <= max_len:
+            return s
+        keep = max_len - len(ellipsis)
+        if keep <= 0:
+            return ellipsis[:max_len]
+        left = keep // 2
+        right = keep - left
+        return f"{s[:left]}{ellipsis}{s[-right:]}"
+
+    if show_recent_games and recent_games:
+        print("\nRecently played games:\n")
+
+        # Determine column widths
+        term_width = 100
+        try:
+            import shutil as sh
+            term_width = sh.get_terminal_size(fallback=(100, 24)).columns
+        except Exception:
+            pass
+
+        w_num = 3
+        w_last = 24
+        w_total = 14
+        fixed = 47
+        w_title = max(24, term_width - fixed - 1)
+
+        hdr = f"{'#'.ljust(w_num)}  {'Title'.ljust(w_title)}  {'Last played'.ljust(w_last)}  {'Total'.ljust(w_total)}"
+        sep = f"{'-' * w_num}  {'-' * w_title}  {'-' * w_last}  {'-' * w_total}"
+        print(hdr)
+        print(sep)
+
+        for i, title in enumerate(recent_games[:games_count], 1):
+            t_name = title.name
+
+            t_last = convert_iso_str_to_datetime(title.title_history.last_time_played) if title.title_history else None
+            t_last_str = get_date_from_ts(t_last) if t_last else "n/a"
+
+            # Fetch stats (Playtime)
+            t_playtime = "0h 0m"
+            if title.service_config_id:
+                try:
+                    stats = await xbl_client.userstats.get_stats(xuid, title.service_config_id, cast(List[GeneralStatsField], [GeneralStatsField.MINUTES_PLAYED]))
+                    mins = 0
+
+                    stat_list_scid = getattr(stats, 'stat_list_scid', None)
+                    statlistscollection = getattr(stats, 'statlistscollection', None)
+
+                    if stat_list_scid:
+                        mins = next((s.value for s in stat_list_scid[0].stats if s.name == "MinutesPlayed"), 0)
+                    elif statlistscollection:
+                        mins = next((s.value for s in statlistscollection[0].stats if s.name == "MinutesPlayed"), 0)
+
+                    if mins:
+                        hours = int(mins) // 60
+                        mins_rem = int(mins) % 60
+                        t_playtime = f"{hours}h {mins_rem}m"
+                except Exception:
+                    pass
+
+            name_fmt = _shorten_middle(t_name, w_title)
+
+            row = (
+                f"{str(i).ljust(w_num)}  "
+                f"{name_fmt.ljust(w_title)}  "
+                f"{t_last_str.ljust(w_last)}  "
+                f"{t_playtime.ljust(w_total)}"
+            )
+            print(row)
+
+    if show_recent_achievements and recent_games:
+        print("\nRecent Achievements:\n")
+
+        all_recent_achievements = []
+
+        # Process top recent games to get achievements
+        for title_prog in recent_games:
+            # print(f"DEBUG: Checking {title_prog.name}")
+            try:
+                game_achievements = await xbl_client.achievements.get_achievements_xboxone_gameprogress(xuid, title_prog.title_id)
+
+                ach_list = []
+                if isinstance(game_achievements, list):
+                    ach_list = game_achievements
+                elif hasattr(game_achievements, 'achievements'):
+                    ach_list = game_achievements.achievements
+
+                unlocked_achs = [a for a in ach_list if a.progress_state == "Achieved"]
+                # print(f"DEBUG: Unlocked {len(unlocked_achs)}")
+
+                for ach in unlocked_achs:
+                    # Store as tuple (achievement, title_name) since we cannot modify the model
+                    all_recent_achievements.append((ach, title_prog.name))
+
+            except Exception as e:
+                pass
+
+        # Sort ALL collected achievements by time_unlocked (descending)
+        all_recent_achievements.sort(key=lambda x: x[0].progression.time_unlocked, reverse=True)
+
+        # Determine column widths for achievements
+        term_width = 100
+        try:
+            import shutil as sh
+            term_width = sh.get_terminal_size(fallback=(100, 24)).columns
+        except Exception:
+            pass
+
+        w_date = 26
+        remaining = term_width - w_date - 4 - 1
+        w_game = int(remaining * 0.4)
+        w_ach = remaining - w_game
+
+        if w_game < 20:
+            w_game = 20
+        if w_ach < 30:
+            w_ach = 30
+
+        hdr = f"{'Date'.ljust(w_date)}  {'Game'.ljust(w_game)}  {'Achievement'.ljust(w_ach)}"
+        sep = f"{'-' * w_date}  {'-' * w_game}  {'-' * w_ach}"
+        print(hdr)
+        print(sep)
+
+        for ach, title_name in all_recent_achievements[:achievements_count]:
+            t_unlock = convert_iso_str_to_datetime(ach.progression.time_unlocked)
+            t_unlock_str = get_date_from_ts(t_unlock) if t_unlock else "n/a"
+
+            a_name = ach.name
+
+            game_fmt = _shorten_middle(title_name, w_game)
+            ach_fmt = _shorten_middle(a_name, w_ach)
+
+            print(f"{t_unlock_str.ljust(w_date)}  {game_fmt.ljust(w_game)}  {ach_fmt.ljust(w_ach)}")
+
+    if session and not client:
+        await session.aclose()
+
+
 def find_config_file(cli_path=None):
     """
     Search for an optional config file in:
@@ -891,7 +1230,7 @@ def resolve_executable(path):
 
 
 # Main function that monitors activity of the specified Xbox user
-async def xbox_monitor_user(xbox_gamertag, csv_file_name):
+async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, games_count=10):
 
     alive_counter = 0
     status_ts = 0
@@ -925,13 +1264,25 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name):
         # Initialize with global OAUTH config options (MS_APP_CLIENT_ID & MS_APP_CLIENT_SECRET)
         auth_mgr = AuthenticationManager(session, MS_APP_CLIENT_ID, MS_APP_CLIENT_SECRET, "")
 
-        # Read in tokens that we received from the xbox-authenticate script
+        # Print detailed user info on startup
+        print("* Fetching details for Xbox user '{}'...\n".format(xbox_gamertag))
+
+        # Helper to print step message
+        def _print_step(msg):
+            sys.stdout.write(f"- {msg}".ljust(32))
+            sys.stdout.flush()
+
+        # Helper to print OK
+        def _print_ok():
+            print("OK")
+
+        _print_step("Authenticating with Xbox...")
         try:
             with open(MS_AUTH_TOKENS_FILE) as f:
                 tokens = f.read()
             auth_mgr.oauth = OAuth2TokenResponse.model_validate_json(tokens)
         except FileNotFoundError as e:
-            print(f"* File {MS_AUTH_TOKENS_FILE} not found or doesn't contain cached tokens! Error: {e}")
+            print(f"\n* File {MS_AUTH_TOKENS_FILE} not found or doesn't contain cached tokens! Error: {e}")
             print("\nAuthorizing via OAuth ...")
             url = auth_mgr.generate_authorization_url()
             print(f"\nOpen this URL in your web browser to authorize:\n{url}")
@@ -950,8 +1301,12 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name):
         with open(MS_AUTH_TOKENS_FILE, mode="w") as f:
             f.write(auth_mgr.oauth.model_dump_json())
 
+        _print_ok()
+
         # Construct the Xbox API client from AuthenticationManager instance
         xbl_client = XboxLiveClient(auth_mgr)
+
+        await get_user_info(xbox_gamertag, client=xbl_client, show_friends=False, show_recent_achievements=False, show_recent_games=False, achievements_count=achievements_count, games_count=games_count)
 
         # Get profile for user with specified gamer tag to grab some details like XUID
         try:
@@ -1015,13 +1370,13 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name):
                 with open(xbox_last_status_file, 'r', encoding="utf-8") as f:
                     last_status_read = json.load(f)
             except Exception as e:
-                print(f"* Cannot load last status from '{xbox_last_status_file}' file: {e}")
+                print(f"\n* Cannot load last status from '{xbox_last_status_file}' file: {e}")
             if last_status_read:
                 last_status_ts = last_status_read[0]
                 last_status = last_status_read[1]
                 xbox_last_status_file_mdate_dt = datetime.fromtimestamp(int(os.path.getmtime(xbox_last_status_file)), pytz.timezone(LOCAL_TIMEZONE))
 
-                print(f"* Last status loaded from file '{xbox_last_status_file}' ({get_short_date_from_ts(xbox_last_status_file_mdate_dt, show_weekday=False, always_show_year=True)})")
+                print(f"\n* Last status loaded from file '{xbox_last_status_file}' ({get_short_date_from_ts(xbox_last_status_file_mdate_dt, show_weekday=False, always_show_year=True)})")
 
                 if last_status_ts > 0:
                     last_status_dt_str = get_short_date_from_ts(last_status_ts, show_weekday=False, always_show_year=True)
@@ -1047,24 +1402,7 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name):
                 with open(xbox_last_status_file, 'w', encoding="utf-8") as f:
                     json.dump(last_status_to_save, f, indent=2)
             except Exception as e:
-                print(f"* Cannot save last status to '{xbox_last_status_file}' file: {e}")
-
-        print(f"\nXbox user gamer tag:\t\t{xbox_gamertag}")
-        print(f"Xbox XUID:\t\t\t{xuid}")
-        if realname:
-            print(f"Real name:\t\t\t{realname}")
-        if location:
-            print(f"Location:\t\t\t{location}")
-        if bio:
-            print(f"Bio:\t\t\t\t{bio}")
-
-        print("\nStatus:\t\t\t\t" + str(status).upper())
-
-        if platform:
-            print("Platform:\t\t\t" + str(platform))
-
-        if title_name and status == "offline":
-            print(f"Title name:\t\t\t{title_name}")
+                print(f"\n* Cannot save last status to '{xbox_last_status_file}' file: {e}")
 
         if status != "offline" and game_name:
             print(f"\nUser is currently in-game:\t{game_name}")
@@ -1406,6 +1744,46 @@ def main():
         help="Send test email to verify SMTP settings"
     )
 
+    # User information
+    info = parser.add_argument_group("User information")
+    info.add_argument(
+        "-i", "--info",
+        dest="info_mode",
+        action="store_true",
+        default=None,
+        help="Show detailed user info and exit"
+    )
+    info.add_argument(
+        "-f", "--friends",
+        dest="show_friends",
+        action="store_true",
+        default=None,
+        help="Show friends list (only works with -i/--info)"
+    )
+    info.add_argument(
+        "-r", "--recent-achievements",
+        dest="show_recent_achievements",
+        action="store_true",
+        default=None,
+        help="Show recent achievements (only works with -i/--info)"
+    )
+    info.add_argument(
+        "-n", "--achievements-count",
+        dest="achievements_count",
+        metavar="NUMBER",
+        type=int,
+        default=5,
+        help="Limit number of recent achievements to display (default: 5)"
+    )
+    info.add_argument(
+        "-m", "--games-count",
+        dest="games_count",
+        metavar="NUMBER",
+        type=int,
+        default=10,
+        help="Limit number of recently played games to display (default: 10)"
+    )
+
     # Intervals & timers
     times = parser.add_argument_group("Intervals & timers")
     times.add_argument(
@@ -1423,7 +1801,6 @@ def main():
         help="Polling interval when user is online"
     )
 
-    # Features & Output
     opts = parser.add_argument_group("Features & output")
     opts.add_argument(
         "-b", "--csv-file",
@@ -1542,18 +1919,22 @@ def main():
         print("* Error: MS_APP_CLIENT_SECRET (-w / --ms_app_client_secret) value is empty or incorrect")
         sys.exit(1)
 
+    if not MS_AUTH_TOKENS_FILE:
+        print("* Error: MS_AUTH_TOKENS_FILE value is empty")
+        sys.exit(1)
+    else:
+        MS_AUTH_TOKENS_FILE = os.path.expanduser(MS_AUTH_TOKENS_FILE)
+
+    if args.info_mode:
+        asyncio.run(get_user_info(args.xbox_gamertag, client=None, show_friends=args.show_friends, show_recent_achievements=args.show_recent_achievements, show_recent_games=True, achievements_count=args.achievements_count, games_count=args.games_count))
+        sys.exit(0)
+
     if args.check_interval:
         XBOX_CHECK_INTERVAL = args.check_interval
         LIVENESS_CHECK_COUNTER = LIVENESS_CHECK_INTERVAL / XBOX_CHECK_INTERVAL if XBOX_CHECK_INTERVAL > 0 else 0
 
     if args.active_interval:
         XBOX_ACTIVE_CHECK_INTERVAL = args.active_interval
-
-    if not MS_AUTH_TOKENS_FILE:
-        print("* Error: MS_AUTH_TOKENS_FILE value is empty")
-        sys.exit(1)
-    else:
-        MS_AUTH_TOKENS_FILE = os.path.expanduser(MS_AUTH_TOKENS_FILE)
 
     if args.csv_file:
         CSV_FILE = os.path.expanduser(args.csv_file)
@@ -1627,7 +2008,7 @@ def main():
         signal.signal(signal.SIGABRT, decrease_active_check_signal_handler)
         signal.signal(signal.SIGHUP, reload_secrets_signal_handler)
 
-    asyncio.run(xbox_monitor_user(args.xbox_gamertag, CSV_FILE))
+    asyncio.run(xbox_monitor_user(args.xbox_gamertag, CSV_FILE, achievements_count=args.achievements_count, games_count=args.games_count))
 
     sys.stdout = stdout_bck
     sys.exit(0)
