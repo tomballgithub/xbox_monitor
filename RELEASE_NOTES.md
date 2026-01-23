@@ -5,7 +5,9 @@ This is a high-level summary of the most important changes.
 # Changes in 1.9 (23 Jan 2026)
 
 - **NEW:** Implemented **activity detection fallback** for users which appear offline by using **title history** timestamps; this enables detecting when these users become active by starting a game, even when their presence status remains hidden; activity detection via title history only works when a game session starts, as timestamps do not update during or at the end of the session
-- **IMPROVE:** Switched from xbox-webapi-python to python-xbox to ensure better long-term stability and active maintenance
+- **IMPROVE:** Switched from **xbox-webapi-python** to **python-xbox** to ensure better long-term stability and active maintenance
+- **IMPROVE:** Enhanced `--generate-config` to support writing directly to a file (e.g. `xbox_monitor --generate-config xbox_monitor.conf`). This avoids UTF-16 encoding issues on **Windows PowerShell**
+- **IMPROVE:** Expanded tabs to spaces in output log files to ensure consistent alignment across different viewers
 
 # Changes in 1.8 (06 Jan 2026)
 
