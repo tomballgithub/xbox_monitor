@@ -2,6 +2,10 @@
 
 This is a high-level summary of the most important changes.
 
+# Changes in 1.9 (23 Jan 2026)
+
+- **IMPROVE:** Switched from xbox-webapi-python to python-xbox to ensure better long-term stability and active maintenance
+
 # Changes in 1.8 (06 Jan 2026)
 
 **Features and Improvements**:
