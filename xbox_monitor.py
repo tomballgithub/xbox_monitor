@@ -237,16 +237,16 @@ import ipaddress
 import asyncio
 from httpx import HTTPStatusError
 try:
-    from xbox.webapi.api.client import XboxLiveClient
-    from xbox.webapi.authentication.manager import AuthenticationManager
-    from xbox.webapi.authentication.models import OAuth2TokenResponse
-    from xbox.webapi.common.signed_session import SignedSession
-    from xbox.webapi.api.provider.presence.models import PresenceLevel
-    from xbox.webapi.api.provider.people.models import PeopleDecoration
-    from xbox.webapi.api.provider.titlehub.models import TitleFields
-    from xbox.webapi.api.provider.userstats.models import GeneralStatsField
+    from pythonxbox.api.client import XboxLiveClient
+    from pythonxbox.authentication.manager import AuthenticationManager
+    from pythonxbox.authentication.models import OAuth2TokenResponse
+    from pythonxbox.common.signed_session import SignedSession
+    from pythonxbox.api.provider.presence.models import PresenceLevel
+    from pythonxbox.api.provider.people.models import PeopleDecoration
+    from pythonxbox.api.provider.titlehub.models import TitleFields
+    from pythonxbox.api.provider.userstats.models import GeneralStatsField
 except ModuleNotFoundError:
-    raise SystemExit("Error: Couldn't find the Xbox-WebAPI library !\n\nTo install it, run:\n    pip3 install xbox-webapi\n\nOnce installed, re-run this tool. For more help, visit:\nhttps://github.com/OpenXbox/xbox-webapi-python/")
+    raise SystemExit("Error: Couldn't find the Python-Xbox library !\n\nTo install it, run:\n    pip install python-xbox\n\nOnce installed, re-run this tool. For more help, visit:\nhttps://github.com/tr4nt0r/python-xbox/")
 import shutil
 from pathlib import Path
 

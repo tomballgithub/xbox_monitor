@@ -52,7 +52,7 @@ xbox_monitor is a tool for real-time monitoring of **Xbox Live players' activiti
 ## Requirements
 
 * Python 3.8 or higher
-* Libraries: [xbox-webapi](https://github.com/OpenXbox/xbox-webapi-python), `requests`, `python-dateutil`, `httpx`, `pytz`, `tzlocal`, `python-dotenv`
+* Libraries: [python-xbox](https://github.com/tr4nt0r/python-xbox), `requests`, `python-dateutil`, `httpx`, `pytz`, `tzlocal`, `python-dotenv`
 
 Tested on:
 
