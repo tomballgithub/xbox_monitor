@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "xbox_monitor"
-version = "1.8"
+version = "1.9"
 description = "Tool implementing real-time tracking of Xbox Live players activities"
 readme = "README.md"
 license = "GPL-3.0-or-later"
@@ -12,7 +12,7 @@ license-files = ["LICEN[CS]E*"]
 authors = [{ name = "Michal Szymanski", email = "misiektoja-pypi@rm-rf.ninja" }]
 requires-python = ">=3.8"
 dependencies = [
-  "xbox-webapi>=2.1.0",
+  "python-xbox>=1.0.0",
   "requests>=2.0",
   "python-dateutil>=2.8",
   "httpx>=0.26.0",
@@ -27,7 +27,7 @@ classifiers = [
   "Operating System :: POSIX :: Linux",
   "Operating System :: MacOS :: MacOS X",
 ]
-keywords = ["xbox", "xbox-live","monitoring", "tracking", "real-time", "osint", "xbox-webapi"]
+keywords = ["xbox", "xbox-live","monitoring", "tracking", "real-time", "osint", "python-xbox"]
 
 [project.urls]
 Homepage = "https://github.com/misiektoja/xbox_monitor"
