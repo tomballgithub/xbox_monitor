@@ -859,6 +859,26 @@ def xbox_process_presence_class(presence, platform_short=True):
     return status, title_name, game_name, platform, lastonline_ts
 
 
+# Fetches the most recent 'last_time_played' timestamp from title history
+# This is useful for detecting activity when users have "appear offline" status
+# Note: This timestamp only updates when a game session STARTS, not during or at the end
+async def xbox_get_latest_title_played_ts(xbl_client, xuid):
+    try:
+        history_response = await xbl_client.titlehub.get_title_history(
+            xuid,
+            max_items=1
+        )
+        if history_response.titles:
+            title = history_response.titles[0]
+            if title.title_history and title.title_history.last_time_played:
+                played_dt = convert_iso_str_to_datetime(title.title_history.last_time_played)
+                if played_dt:
+                    return int(played_dt.timestamp())
+    except Exception:
+        pass
+    return 0
+
+
 # Gets detailed user information and displays it (for -i/--info mode)
 async def get_user_info(gamertag, client=None, show_friends=False, show_recent_achievements=False, show_recent_games=False, achievements_count=5, games_count=10):
 
@@ -951,6 +971,13 @@ async def get_user_info(gamertag, client=None, show_friends=False, show_recent_a
         if session:
             await session.aclose()
         sys.exit(1)
+    print_ok()
+
+    # Fetch title history timestamp as fallback for "appear offline" users
+    print_step("Checking title history...")
+    title_history_ts = await xbox_get_latest_title_played_ts(xbl_client, xuid)
+    if title_history_ts > 0 and title_history_ts > lastonline_ts:
+        lastonline_ts = title_history_ts
     print_ok()
 
     # Friends
@@ -1349,6 +1376,12 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
 
         status, title_name, game_name, platform, lastonline_ts = xbox_process_presence_class(presence, False)
 
+        # Fetch title history timestamp as fallback for "appear offline" users
+        title_history_ts = await xbox_get_latest_title_played_ts(xbl_client, xuid)
+        if title_history_ts > 0 and title_history_ts > lastonline_ts:
+            print(f"\n* Using title history timestamp (more recent than presence last_seen)")
+            lastonline_ts = title_history_ts
+
         if not status:
             print(f"* Error: Cannot get status for user {xbox_gamertag}")
             sys.exit(1)
@@ -1455,6 +1488,12 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
             try:
                 presence = await xbl_client.presence.get_presence(str(xuid), PresenceLevel.ALL)
                 status, title_name, game_name, platform, lastonline_ts = xbox_process_presence_class(presence)
+
+                # Fetch title history timestamp as fallback for "appear offline" users
+                title_history_ts = await xbox_get_latest_title_played_ts(xbl_client, xuid)
+                if title_history_ts > 0 and title_history_ts > lastonline_ts:
+                    lastonline_ts = title_history_ts
+
                 if not status:
                     raise ValueError('Xbox user status is empty')
                 email_sent = False
