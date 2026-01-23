@@ -259,7 +259,8 @@ class Logger(object):
 
     def write(self, message):
         self.terminal.write(message)
-        self.logfile.write(message)
+        # Expand tabs for file output (stdout remains untouched)
+        self.logfile.write(message.expandtabs(8))
         self.terminal.flush()
         self.logfile.flush()
 
