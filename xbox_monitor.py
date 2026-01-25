@@ -975,11 +975,12 @@ async def get_user_info(gamertag, client=None, show_friends=False, show_recent_a
     print_ok()
 
     # Fetch title history timestamp as fallback for "appear offline" users
-    print_step("Checking title history...")
-    title_history_ts = await xbox_get_latest_title_played_ts(xbl_client, xuid)
-    if title_history_ts > 0 and title_history_ts > lastonline_ts:
-        lastonline_ts = title_history_ts
-    print_ok()
+    if status.lower() == "offline":
+        print_step("Checking title history...")
+        title_history_ts = await xbox_get_latest_title_played_ts(xbl_client, xuid)
+        if title_history_ts > 0 and title_history_ts > lastonline_ts:
+            lastonline_ts = title_history_ts
+        print_ok()
 
     # Friends
     friends_count = 0
@@ -1279,6 +1280,7 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
     game_total_ts = 0
     games_number = 0
     game_total_after_offline_counted = False
+    title_history_ts_old = 0  # Track previous title history timestamp for "appear offline" activity detection
 
     try:
         if csv_file_name:
@@ -1378,10 +1380,12 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
         status, title_name, game_name, platform, lastonline_ts = xbox_process_presence_class(presence, False)
 
         # Fetch title history timestamp as fallback for "appear offline" users
-        title_history_ts = await xbox_get_latest_title_played_ts(xbl_client, xuid)
-        if title_history_ts > 0 and title_history_ts > lastonline_ts:
-            print(f"\n* Using title history timestamp (more recent than presence last_seen)")
-            lastonline_ts = title_history_ts
+        # Only use this when user appears offline - otherwise presence data is accurate
+        if status == "offline":
+            title_history_ts = await xbox_get_latest_title_played_ts(xbl_client, xuid)
+            if title_history_ts > 0 and title_history_ts > lastonline_ts:
+                print(f"\n* Using title history timestamp (more recent than presence last_seen)")
+                lastonline_ts = title_history_ts
 
         if not status:
             print(f"* Error: Cannot get status for user {xbox_gamertag}")
@@ -1490,10 +1494,10 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
                 presence = await xbl_client.presence.get_presence(str(xuid), PresenceLevel.ALL)
                 status, title_name, game_name, platform, lastonline_ts = xbox_process_presence_class(presence)
 
-                # Fetch title history timestamp as fallback for "appear offline" users
-                title_history_ts = await xbox_get_latest_title_played_ts(xbl_client, xuid)
-                if title_history_ts > 0 and title_history_ts > lastonline_ts:
-                    lastonline_ts = title_history_ts
+                # Detect gaming activity for "appear offline" users via title history
+                title_history_ts = 0
+                if status == "offline":
+                    title_history_ts = await xbox_get_latest_title_played_ts(xbl_client, xuid)
 
                 if not status:
                     raise ValueError('Xbox user status is empty')
@@ -1644,6 +1648,23 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
 
                 game_ts_old = game_ts
                 print_cur_ts("Timestamp:\t\t\t")
+
+            # Detect gaming activity for "appear offline" users via title history
+            # This triggers when we detect a new game session started while user appears offline
+            if status == "offline" and title_history_ts > 0 and title_history_ts > title_history_ts_old:
+                activity_detected_ts = get_date_from_ts(title_history_ts)
+                print(f"*** User detected playing a game (via title history)! Started: {activity_detected_ts}")
+                print_cur_ts("Timestamp:\t\t\t")
+
+                m_subject = f"Xbox user {xbox_gamertag} detected playing (via title history)"
+                m_body = f"Xbox user {xbox_gamertag} appears offline but was detected starting a game.\n\nGame session started: {activity_detected_ts}\n\nNote: This was detected via title history. We cannot detect when the user stops playing via this method.{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
+
+                if ACTIVE_INACTIVE_NOTIFICATION or STATUS_NOTIFICATION:
+                    print(f"Sending email notification to {RECEIVER_EMAIL}")
+                    send_email(m_subject, m_body, "", SMTP_SSL)
+
+                title_history_ts_old = title_history_ts
+                change = True
 
             if change:
                 alive_counter = 0
