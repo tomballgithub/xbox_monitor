@@ -1388,6 +1388,8 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
             if title_history_ts > 0 and title_history_ts > lastonline_ts:
                 print(f"\n* Using title history timestamp (more recent than presence last_seen)")
                 lastonline_ts = title_history_ts
+            # Initialize title_history_ts_old so we don't trigger false activity on first loop iteration
+            title_history_ts_old = title_history_ts
 
         if not status:
             print(f"* Error: Cannot get status for user {xbox_gamertag}")
