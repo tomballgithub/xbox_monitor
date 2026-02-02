@@ -1,6 +1,25 @@
 # xbox_monitor
 
-xbox_monitor is a tool for real-time monitoring of **Xbox Live players' activities**.
+<p align="left">
+  <img src="https://img.shields.io/github/v/release/misiektoja/xbox_monitor?style=flat-square&color=blue" alt="GitHub Release" />
+  <img src="https://img.shields.io/pypi/v/xbox_monitor?style=flat-square&color=orange" alt="PyPI Version" />
+  <img src="https://img.shields.io/github/stars/misiektoja/xbox_monitor?style=flat-square&color=yellow" alt="GitHub Stars" />
+  <img src="https://img.shields.io/github/last-commit/misiektoja/xbox_monitor?style=flat-square&color=green" alt="Last Commit" />
+  <img src="https://img.shields.io/github/license/misiektoja/xbox_monitor?style=flat-square&color=blue" alt="License" />
+  <img src="https://img.shields.io/pypi/pyversions/xbox_monitor?style=flat-square&color=blueviolet" alt="Python Versions" />
+  <img src="https://img.shields.io/badge/maintenance-active-brightgreen?style=flat-square" alt="Maintenance" />
+</p>
+
+**xbox_monitor** is a tool for real-time monitoring of **Xbox Live players' activities**.
+
+### 🚀 Quick Install
+```sh
+pip install xbox_monitor
+```
+
+<p align="center">
+   <img src="https://raw.githubusercontent.com/misiektoja/xbox_monitor/refs/heads/main/assets/xbox_monitor.png" alt="xbox_monitor_screenshot" width="85%"/>
+</p>
 
 <a id="features"></a>
 ## Features
@@ -16,10 +35,6 @@ xbox_monitor is a tool for real-time monitoring of **Xbox Live players' activiti
 - **Flexible configuration** - support for config files, dotenv files, environment variables and command-line arguments
 - Possibility to **control the running copy** of the script via signals
 - **Functional, procedural Python** (minimal OOP)
-
-<p align="center">
-   <img src="https://raw.githubusercontent.com/misiektoja/xbox_monitor/refs/heads/main/assets/xbox_monitor.png" alt="xbox_monitor_screenshot" width="85%"/>
-</p>
 
 <a id="table-of-contents"></a>
 ## Table of Contents
