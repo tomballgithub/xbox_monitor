@@ -1660,7 +1660,6 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
                 activity_detected_ts = get_date_from_ts(title_history_ts)
                 game_info = f" '{title_history_game}'" if title_history_game else ""
                 print(f"User detected playing a game{game_info} (via title history)! Started: {activity_detected_ts}")
-                print_cur_ts("Timestamp:\t\t\t")
 
                 m_subject = f"Xbox user {xbox_gamertag} detected playing{game_info} (via title history)"
                 m_body = f"Xbox user {xbox_gamertag} appears offline but was detected starting a game{game_info}.\n\nGame session started: {activity_detected_ts}\n\nNote: This was detected via title history. We cannot detect when the user stops playing via this method.{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
@@ -1669,6 +1668,7 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
                     print(f"Sending email notification to {RECEIVER_EMAIL}")
                     send_email(m_subject, m_body, "", SMTP_SSL)
 
+                print_cur_ts("Timestamp:\t\t\t")
                 title_history_ts_old = title_history_ts
                 change = True
 
