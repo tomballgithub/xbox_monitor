@@ -1381,15 +1381,15 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
 
         status, title_name, game_name, platform, lastonline_ts = xbox_process_presence_class(presence, False)
 
-        # Fetch title history timestamp as fallback for "appear offline" users
-        # Only use this when user appears offline - otherwise presence data is accurate
+        # Establish title history baseline
+        title_history_ts, title_history_game = await xbox_get_latest_title_played_ts(xbl_client, xuid)
+        title_history_ts_old = title_history_ts
+        title_history_game_old = title_history_game
+
         if status == "offline":
-            title_history_ts, title_history_game = await xbox_get_latest_title_played_ts(xbl_client, xuid)
             if title_history_ts > 0 and title_history_ts > lastonline_ts:
                 print(f"\n* Using title history timestamp (more recent than presence last_seen)")
                 lastonline_ts = title_history_ts
-            # Initialize title_history_ts_old so we don't trigger false activity on first loop iteration
-            title_history_ts_old = title_history_ts
 
         if not status:
             print(f"* Error: Cannot get status for user {xbox_gamertag}")
@@ -1498,11 +1498,11 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
                 presence = await xbl_client.presence.get_presence(str(xuid), PresenceLevel.ALL)
                 status, title_name, game_name, platform, lastonline_ts = xbox_process_presence_class(presence)
 
-                # Detect gaming activity for "appear offline" users via title history
-                title_history_ts = 0
-                title_history_game = ""
-                if status == "offline":
-                    title_history_ts, title_history_game = await xbox_get_latest_title_played_ts(xbl_client, xuid)
+                title_history_ts, title_history_game = await xbox_get_latest_title_played_ts(xbl_client, xuid)
+
+                if status != "offline":
+                    title_history_ts_old = title_history_ts
+                    title_history_game_old = title_history_game
 
                 if not status:
                     raise ValueError('Xbox user status is empty')
