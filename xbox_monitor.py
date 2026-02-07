@@ -1039,78 +1039,112 @@ async def get_user_info(gamertag, client=None, show_friends=False, show_recent_a
         print_ok()
 
     # Friends
-    # NOTE: python-xbox library workaround, as its get_friends_own() doesn't properly return friends list (bug in library)
-    # We make a direct API call to the correct Xbox endpoint instead
+    # Try library method first (works with fixed python-xbox), then fallback to direct API (for unfixed library)
     friends_count = 0
     friends_list = []
     print_step("Fetching friends info...")
+
+    # First, try using the library's method (works if using fixed python-xbox library)
     try:
-        # Direct API call to the correct endpoint for friends list
-        # The Xbox people social API returns actual friends, not just the user profile
-        peoplehub_url = "https://peoplehub.xboxlive.com"
-        decoration = "presenceDetail,preferredColor,detail"
-        url = f"{peoplehub_url}/users/xuid({xuid})/people/social/decoration/{decoration}"
-        headers = {
-            "x-xbl-contract-version": "5",
-            "Accept-Language": "en-US",
-        }
+        friends_response = await xbl_client.people.get_friends_by_xuid(str(xuid))
+        if friends_response.people:
+            friends_list_raw = friends_response.people
+            # Filter out the target user's own profile if it appears
+            friends_list_filtered = [f for f in friends_list_raw if str(getattr(f, 'xuid', '')) != str(xuid)]
 
-        # Try to get the session from the XboxLiveClient - python-xbox uses 'session' attribute
-        http_session = None
-        if hasattr(xbl_client, 'session'):
-            http_session = getattr(xbl_client, 'session')
-        elif hasattr(xbl_client, '_session'):
-            http_session = getattr(xbl_client, '_session')
-        elif hasattr(xbl_client, '_auth_mgr'):
-            auth_mgr = getattr(xbl_client, '_auth_mgr')
-            if hasattr(auth_mgr, 'session'):
-                http_session = getattr(auth_mgr, 'session')
+            if friends_list_filtered:
+                # Library returned actual friends list (not just the user's profile)
+                friends_list = [
+                    {
+                        'xuid': getattr(f, 'xuid', ''),
+                        'gamertag': getattr(f, 'gamertag', 'Unknown'),
+                        'presenceState': getattr(f, 'presence_state', 'Offline'),
+                        'presenceDetails': [
+                            {'presenceText': getattr(d, 'presence_text', '')}
+                            for d in (getattr(f, 'presence_details', []) or [])
+                        ]
+                    }
+                    for f in friends_list_filtered
+                ]
+                friends_count = len(friends_list)
+                debug_print(f"Friends fetched via library method: {friends_count}")
+            elif len(friends_list_raw) == 1:
+                # Response contains only the target user's profile
+                # Check if this is the unfixed library bug or if user genuinely has 0 friends
+                user_profile = friends_list_raw[0]
+                detail = getattr(user_profile, 'detail', None)
+                actual_friend_count = getattr(detail, 'friend_count', 0) if detail else 0
 
-        if http_session is None:
-            debug_print(f"XboxLiveClient attributes: {[a for a in dir(xbl_client) if not a.startswith('__')]}")
-            raise AttributeError("Could not find HTTP session in XboxLiveClient")
-
-        response = await http_session.get(url, headers=headers)
-        response.raise_for_status()
-        friends_data = response.json()
-
-        debug_print(f"Direct API response keys: {friends_data.keys() if isinstance(friends_data, dict) else 'not a dict'}")
-
-        if 'people' in friends_data:
-            friends_list_raw = friends_data['people']
-            # Filter out the user's own profile if it somehow appears
-            friends_list = [f for f in friends_list_raw if str(f.get('xuid', '')) != str(xuid)]
-            friends_count = len(friends_list)
-            debug_print(f"Friends fetched via direct API: {friends_count}")
+                if actual_friend_count > 0:
+                    # Bug: Library returned user profile but they have friends - fallback needed
+                    debug_print(f"Library bug detected: returned user profile with friend_count={actual_friend_count}, falling back to direct API")
+                    raise ValueError("Unfixed library bug - response contains user profile instead of friends")
+                else:
+                    # User genuinely has 0 friends
+                    friends_count = 0
+                    friends_list = []
+                    debug_print("User has 0 friends (confirmed via library method)")
+            else:
+                # Empty response - user has 0 friends
+                friends_count = 0
+                friends_list = []
+                debug_print("Friends fetched via library method: 0")
         else:
-            debug_print(f"No 'people' key in response: {list(friends_data.keys()) if isinstance(friends_data, dict) else friends_data}")
+            # Empty people list - user has 0 friends
+            friends_count = 0
+            friends_list = []
+            debug_print("Friends fetched via library method: 0 (empty response)")
 
     except Exception as e:
-        debug_print(f"Direct API call failed: {e}")
-        # Fallback to summary for count only
+        debug_print(f"Library method failed or unfixed: {e}")
+        # Fallback to direct API call (works with unfixed library)
         try:
-            friends_summary = await xbl_client.people.get_friends_summary_by_xuid(str(xuid))
-            if hasattr(friends_summary, 'target_following_count'):
-                friends_count = friends_summary.target_following_count
-                debug_print(f"Friends count from summary (fallback): {friends_count}")
+            peoplehub_url = "https://peoplehub.xboxlive.com"
+            decoration = "presenceDetail,preferredColor,detail"
+            url = f"{peoplehub_url}/users/xuid({xuid})/people/social/decoration/{decoration}"
+            headers = {
+                "x-xbl-contract-version": "5",
+                "Accept-Language": "en-US",
+            }
+
+            # Try to get the session from the XboxLiveClient
+            http_session = None
+            if hasattr(xbl_client, 'session'):
+                http_session = getattr(xbl_client, 'session')
+            elif hasattr(xbl_client, '_session'):
+                http_session = getattr(xbl_client, '_session')
+            elif hasattr(xbl_client, '_auth_mgr'):
+                auth_mgr = getattr(xbl_client, '_auth_mgr')
+                if hasattr(auth_mgr, 'session'):
+                    http_session = getattr(auth_mgr, 'session')
+
+            if http_session:
+                response = await http_session.get(url, headers=headers)
+                response.raise_for_status()
+                friends_data = response.json()
+
+                if 'people' in friends_data:
+                    friends_list_raw = friends_data['people']
+                    friends_list = [f for f in friends_list_raw if str(f.get('xuid', '')) != str(xuid)]
+                    friends_count = len(friends_list)
+                    debug_print(f"Friends fetched via direct API: {friends_count}")
+            else:
+                debug_print("Could not find HTTP session for direct API call")
+                # Last fallback - get count from summary
+                friends_summary = await xbl_client.people.get_friends_summary_by_xuid(str(xuid))
+                if hasattr(friends_summary, 'target_following_count'):
+                    friends_count = friends_summary.target_following_count
+                    debug_print(f"Friends count from summary: {friends_count}")
+
         except Exception as e2:
-            debug_print(f"Summary fallback also failed: {e2}")
-            # Last resort: try profile detail
-            try:
-                profile_response = await xbl_client.people.get_friends_by_xuid(str(xuid))
-                if profile_response.people and len(profile_response.people) > 0:
-                    person = profile_response.people[0]
-                    if hasattr(person, 'detail') and person.detail and hasattr(person.detail, 'friend_count'):
-                        friends_count = person.detail.friend_count
-                        debug_print(f"Friends count from profile detail (last fallback): {friends_count}")
-            except Exception as e3:
-                print(f"Warning: Could not fetch friends: {e3}")
+            debug_print(f"Direct API and summary fallbacks failed: {e2}")
+            print(f"Warning: Could not fetch friends: {e2}")
 
     if friends_list:
         debug_print(f"Friends list ({len(friends_list)}):")
         for i, friend in enumerate(friends_list, 1):
-            f_gamertag = friend.get('gamertag', 'Unknown')
-            f_state = friend.get('presenceState', 'Unknown')
+            f_gamertag = friend.get('gamertag', 'Unknown') if isinstance(friend, dict) else getattr(friend, 'gamertag', 'Unknown')
+            f_state = friend.get('presenceState', 'Unknown') if isinstance(friend, dict) else getattr(friend, 'presence_state', 'Offline')
             debug_print(f"  {i}. {f_gamertag} ({f_state})")
 
     print_ok()
