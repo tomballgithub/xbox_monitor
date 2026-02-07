@@ -1016,6 +1016,7 @@ async def get_user_info(gamertag, client=None, show_friends=False, show_recent_a
         if session:
             await session.aclose()
         sys.exit(1)
+    debug_print(f"Profile fetched: XUID={xuid}, Gamerscore={gamerscore}, Tier={tier}")
     print_ok()
 
     print_step("Fetching presence info...")
@@ -1053,6 +1054,22 @@ async def get_user_info(gamertag, client=None, show_friends=False, show_recent_a
 
     except Exception as e:
         print(f"Warning: Could not fetch friends: {e}")
+
+    if friends_list:
+        debug_print(f"Friends fetched: {len(friends_list)}")
+        for i, friend in enumerate(friends_list, 1):
+            f_status = "Offline"
+            if friend.presence_state == "Online":
+                f_status = "Online"
+                if friend.presence_details:
+                    for d in friend.presence_details:
+                        if d.presence_text:
+                            f_status += f" ({d.presence_text})"
+                            break
+            debug_print(f"  {i}. {friend.gamertag} ({f_status})")
+    else:
+        debug_print("Friends fetched: 0")
+
     print_ok()
 
     # Title History (Recent Games)
@@ -1072,6 +1089,19 @@ async def get_user_info(gamertag, client=None, show_friends=False, show_recent_a
                 recent_games = history_response.titles[:]
         except Exception as e:
             print(f"Warning: Could not fetch game history: {e}")
+
+        if recent_games:
+            debug_print(f"Game history titles fetched: {len(recent_games)}")
+            for i, title in enumerate(recent_games, 1):
+                played_val = "Unknown"
+                if title.title_history and title.title_history.last_time_played:
+                     dt = convert_iso_str_to_datetime(title.title_history.last_time_played)
+                     if dt:
+                         played_val = get_date_from_ts(int(dt.timestamp()))
+                debug_print(f"  {i}. {title.name} (Last played: {played_val})")
+        else:
+             debug_print("Game history fetched: 0")
+
         print_ok()
 
     # Recent Achievements
@@ -1080,9 +1110,28 @@ async def get_user_info(gamertag, client=None, show_friends=False, show_recent_a
         print_step("Fetching achievements...")
         try:
             ach_response = await xbl_client.achievements.get_achievements_xboxone_recent_progress_and_info(xuid)
-            recent_achievements = ach_response
+            if hasattr(ach_response, 'achievements'):
+                 recent_achievements = ach_response.achievements
+            # Sometimes it might return a list directly (rare but possible in some lib versions)
+            elif isinstance(ach_response, list):
+                 recent_achievements = ach_response
         except Exception as e:
             print(f"Warning: Could not fetch achievements: {e}")
+
+        if recent_achievements:
+            debug_print(f"Method 1 (Fast Feed) - Recent achievements fetched: {len(recent_achievements)}")
+            for i, ach in enumerate(recent_achievements, 1):
+                 name = ach.name if hasattr(ach, 'name') and ach.name else "Unknown"
+                 state = ach.progress_state if hasattr(ach, 'progress_state') else "Unknown"
+                 time_unlocked = "N/A"
+                 if hasattr(ach, 'progression') and ach.progression.time_unlocked:
+                      dt = convert_iso_str_to_datetime(ach.progression.time_unlocked)
+                      if dt:
+                          time_unlocked = get_date_from_ts(int(dt.timestamp()))
+                 debug_print(f"  {i}. {name} ({state}, Unlocked: {time_unlocked})")
+        else:
+            debug_print("Method 1 (Fast Feed) - Recent achievements fetched: 0")
+
         print_ok()
 
     # Map Account Tier to descriptive text
@@ -1211,6 +1260,7 @@ async def get_user_info(gamertag, client=None, show_friends=False, show_recent_a
 
     if show_recent_achievements and recent_games:
         print("\nRecent Achievements:\n")
+        debug_print("Method 2 (Deep Scan) - Checking recent games for achievements...")
 
         all_recent_achievements = []
 
@@ -1219,6 +1269,7 @@ async def get_user_info(gamertag, client=None, show_friends=False, show_recent_a
             # print(f"DEBUG: Checking {title_prog.name}")
             try:
                 game_achievements = await xbl_client.achievements.get_achievements_xboxone_gameprogress(xuid, title_prog.title_id)
+                debug_print(f"Fetching detailed achievements for '{title_prog.name}'...")
 
                 ach_list = []
                 if isinstance(game_achievements, list):
@@ -1227,6 +1278,8 @@ async def get_user_info(gamertag, client=None, show_friends=False, show_recent_a
                     ach_list = game_achievements.achievements
 
                 unlocked_achs = [a for a in ach_list if a.progress_state == "Achieved"]
+                if unlocked_achs:
+                    debug_print(f"  > Found {len(unlocked_achs)} unlocked achievements")
                 # print(f"DEBUG: Unlocked {len(unlocked_achs)}")
 
                 for ach in unlocked_achs:
@@ -2090,6 +2143,9 @@ def main():
         sys.exit(1)
     else:
         MS_AUTH_TOKENS_FILE = os.path.expanduser(MS_AUTH_TOKENS_FILE)
+
+    if args.debug_mode is not None:
+        DEBUG_MODE = args.debug_mode
 
     if args.info_mode:
         asyncio.run(get_user_info(args.xbox_gamertag, client=None, show_friends=args.show_friends, show_recent_achievements=args.show_recent_achievements, show_recent_games=True, achievements_count=args.achievements_count, games_count=args.games_count))
