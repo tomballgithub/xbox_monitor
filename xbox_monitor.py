@@ -1039,36 +1039,79 @@ async def get_user_info(gamertag, client=None, show_friends=False, show_recent_a
         print_ok()
 
     # Friends
+    # NOTE: python-xbox library workaround, as its get_friends_own() doesn't properly return friends list (bug in library)
+    # We make a direct API call to the correct Xbox endpoint instead
     friends_count = 0
     friends_list = []
     print_step("Fetching friends info...")
     try:
-        try:
-            friends_response = await xbl_client.people.get_friends_own(decoration=[PeopleDecoration.PRESENCE_DETAIL])
-            friends_list = friends_response.people
+        # Direct API call to the correct endpoint for friends list
+        # The Xbox people social API returns actual friends, not just the user profile
+        peoplehub_url = "https://peoplehub.xboxlive.com"
+        decoration = "presenceDetail,preferredColor,detail"
+        url = f"{peoplehub_url}/users/xuid({xuid})/people/social/decoration/{decoration}"
+        headers = {
+            "x-xbl-contract-version": "5",
+            "Accept-Language": "en-US",
+        }
+
+        # Try to get the session from the XboxLiveClient - python-xbox uses 'session' attribute
+        http_session = None
+        if hasattr(xbl_client, 'session'):
+            http_session = getattr(xbl_client, 'session')
+        elif hasattr(xbl_client, '_session'):
+            http_session = getattr(xbl_client, '_session')
+        elif hasattr(xbl_client, '_auth_mgr'):
+            auth_mgr = getattr(xbl_client, '_auth_mgr')
+            if hasattr(auth_mgr, 'session'):
+                http_session = getattr(auth_mgr, 'session')
+
+        if http_session is None:
+            debug_print(f"XboxLiveClient attributes: {[a for a in dir(xbl_client) if not a.startswith('__')]}")
+            raise AttributeError("Could not find HTTP session in XboxLiveClient")
+
+        response = await http_session.get(url, headers=headers)
+        response.raise_for_status()
+        friends_data = response.json()
+
+        debug_print(f"Direct API response keys: {friends_data.keys() if isinstance(friends_data, dict) else 'not a dict'}")
+
+        if 'people' in friends_data:
+            friends_list_raw = friends_data['people']
+            # Filter out the user's own profile if it somehow appears
+            friends_list = [f for f in friends_list_raw if str(f.get('xuid', '')) != str(xuid)]
             friends_count = len(friends_list)
-        except Exception:
-            friends_response = await xbl_client.people.get_friends_by_xuid(xuid)
-            friends_list = friends_response.people
-            friends_count = len(friends_list)
+            debug_print(f"Friends fetched via direct API: {friends_count}")
+        else:
+            debug_print(f"No 'people' key in response: {list(friends_data.keys()) if isinstance(friends_data, dict) else friends_data}")
 
     except Exception as e:
-        print(f"Warning: Could not fetch friends: {e}")
+        debug_print(f"Direct API call failed: {e}")
+        # Fallback to summary for count only
+        try:
+            friends_summary = await xbl_client.people.get_friends_summary_by_xuid(str(xuid))
+            if hasattr(friends_summary, 'target_following_count'):
+                friends_count = friends_summary.target_following_count
+                debug_print(f"Friends count from summary (fallback): {friends_count}")
+        except Exception as e2:
+            debug_print(f"Summary fallback also failed: {e2}")
+            # Last resort: try profile detail
+            try:
+                profile_response = await xbl_client.people.get_friends_by_xuid(str(xuid))
+                if profile_response.people and len(profile_response.people) > 0:
+                    person = profile_response.people[0]
+                    if hasattr(person, 'detail') and person.detail and hasattr(person.detail, 'friend_count'):
+                        friends_count = person.detail.friend_count
+                        debug_print(f"Friends count from profile detail (last fallback): {friends_count}")
+            except Exception as e3:
+                print(f"Warning: Could not fetch friends: {e3}")
 
     if friends_list:
-        debug_print(f"Friends fetched: {len(friends_list)}")
+        debug_print(f"Friends list ({len(friends_list)}):")
         for i, friend in enumerate(friends_list, 1):
-            f_status = "Offline"
-            if friend.presence_state == "Online":
-                f_status = "Online"
-                if friend.presence_details:
-                    for d in friend.presence_details:
-                        if d.presence_text:
-                            f_status += f" ({d.presence_text})"
-                            break
-            debug_print(f"  {i}. {friend.gamertag} ({f_status})")
-    else:
-        debug_print("Friends fetched: 0")
+            f_gamertag = friend.get('gamertag', 'Unknown')
+            f_state = friend.get('presenceState', 'Unknown')
+            debug_print(f"  {i}. {f_gamertag} ({f_state})")
 
     print_ok()
 
@@ -1095,12 +1138,12 @@ async def get_user_info(gamertag, client=None, show_friends=False, show_recent_a
             for i, title in enumerate(recent_games, 1):
                 played_val = "Unknown"
                 if title.title_history and title.title_history.last_time_played:
-                     dt = convert_iso_str_to_datetime(title.title_history.last_time_played)
-                     if dt:
-                         played_val = get_date_from_ts(int(dt.timestamp()))
+                    dt = convert_iso_str_to_datetime(title.title_history.last_time_played)
+                    if dt:
+                        played_val = get_date_from_ts(int(dt.timestamp()))
                 debug_print(f"  {i}. {title.name} (Last played: {played_val})")
         else:
-             debug_print("Game history fetched: 0")
+            debug_print("Game history fetched: 0")
 
         print_ok()
 
@@ -1111,24 +1154,24 @@ async def get_user_info(gamertag, client=None, show_friends=False, show_recent_a
         try:
             ach_response = await xbl_client.achievements.get_achievements_xboxone_recent_progress_and_info(xuid)
             if hasattr(ach_response, 'achievements'):
-                 recent_achievements = ach_response.achievements
+                recent_achievements = getattr(ach_response, 'achievements')
             # Sometimes it might return a list directly (rare but possible in some lib versions)
             elif isinstance(ach_response, list):
-                 recent_achievements = ach_response
+                recent_achievements = ach_response
         except Exception as e:
             print(f"Warning: Could not fetch achievements: {e}")
 
         if recent_achievements:
             debug_print(f"Method 1 (Fast Feed) - Recent achievements fetched: {len(recent_achievements)}")
             for i, ach in enumerate(recent_achievements, 1):
-                 name = ach.name if hasattr(ach, 'name') and ach.name else "Unknown"
-                 state = ach.progress_state if hasattr(ach, 'progress_state') else "Unknown"
-                 time_unlocked = "N/A"
-                 if hasattr(ach, 'progression') and ach.progression.time_unlocked:
-                      dt = convert_iso_str_to_datetime(ach.progression.time_unlocked)
-                      if dt:
-                          time_unlocked = get_date_from_ts(int(dt.timestamp()))
-                 debug_print(f"  {i}. {name} ({state}, Unlocked: {time_unlocked})")
+                name = ach.name if hasattr(ach, 'name') and ach.name else "Unknown"
+                state = ach.progress_state if hasattr(ach, 'progress_state') else "Unknown"
+                time_unlocked = "N/A"
+                if hasattr(ach, 'progression') and ach.progression.time_unlocked:
+                    dt = convert_iso_str_to_datetime(ach.progression.time_unlocked)
+                    if dt:
+                        time_unlocked = get_date_from_ts(int(dt.timestamp()))
+                debug_print(f"  {i}. {name} ({state}, Unlocked: {time_unlocked})")
         else:
             debug_print("Method 1 (Fast Feed) - Recent achievements fetched: 0")
 
@@ -1170,19 +1213,33 @@ async def get_user_info(gamertag, client=None, show_friends=False, show_recent_a
             print(f"Platform:\t\t\t{platform}")
 
     print(f"\nFriends count:\t\t\t{friends_count}")
-    if show_friends and friends_list:
-        print("\nFriends list:\n")
-        for friend in friends_list:
-            f_status = "Offline"
-            if friend.presence_state == "Online":
-                f_status = "Online"
-                if friend.presence_details:
-                    # try to get game
-                    for d in friend.presence_details:
-                        if d.presence_text:
-                            f_status += f" ({d.presence_text})"
-                            break
-            print(f"{friend.gamertag.ljust(30)} {f_status}")
+    if show_friends:
+        if friends_list:
+            print("\nFriends list:\n")
+            for friend in friends_list:
+                # Handle both dict (from direct API) and model object formats
+                if isinstance(friend, dict):
+                    f_gamertag = friend.get('gamertag', 'Unknown')
+                    f_status = friend.get('presenceState', 'Offline')
+                    if f_status == "Online":
+                        presence_details = friend.get('presenceDetails', [])
+                        for d in presence_details:
+                            if d.get('presenceText'):
+                                f_status = f"Online ({d.get('presenceText')})"
+                                break
+                else:
+                    f_gamertag = friend.gamertag
+                    f_status = "Offline"
+                    if friend.presence_state == "Online":
+                        f_status = "Online"
+                        if friend.presence_details:
+                            for d in friend.presence_details:
+                                if d.presence_text:
+                                    f_status += f" ({d.presence_text})"
+                                    break
+                print(f"{f_gamertag.ljust(30)} {f_status}")
+        else:
+            print("\n(Friends list details not available with current Xbox API library)")
 
     # Helper function to shorten string
     def _shorten_middle(s, max_len, ellipsis="..."):
