@@ -144,6 +144,10 @@ CLEAR_SCREEN = True
 # Value used by signal handlers increasing/decreasing the check for player activity
 # when user is online/away (XBOX_ACTIVE_CHECK_INTERVAL); in seconds
 XBOX_ACTIVE_CHECK_SIGNAL_VALUE = 30  # 30 seconds
+
+# Enable debug mode for technical logging (can also be enabled via --debug flag)
+# Shows technical details, timestamps and internal state changes
+DEBUG_MODE = False
 """
 
 # -------------------------
@@ -180,6 +184,7 @@ DISABLE_LOGGING = False
 HORIZONTAL_LINE = 0
 CLEAR_SCREEN = False
 XBOX_ACTIVE_CHECK_SIGNAL_VALUE = 0
+DEBUG_MODE = False
 
 exec(CONFIG_BLOCK, globals())
 
@@ -199,12 +204,16 @@ CLI_CONFIG_PATH = None
 # to solve the issue: 'SyntaxError: f-string expression part cannot include a backslash'
 nl_ch = "\n"
 
+# Global to track if we're at start of line (for debug_print to handle interleaving)
+STDOUT_AT_START_OF_LINE = True
+
 
 import sys
 
 if sys.version_info < (3, 8):
     print("* Error: Python version 3.8 or higher required !")
     sys.exit(1)
+
 
 import time
 import json
@@ -258,6 +267,9 @@ class Logger(object):
         self.logfile = open(filename, "a", buffering=1, encoding="utf-8")
 
     def write(self, message):
+        global STDOUT_AT_START_OF_LINE
+        if message:
+            STDOUT_AT_START_OF_LINE = message.endswith('\n')
         self.terminal.write(message)
         # Expand tabs for file output (stdout remains untouched)
         self.logfile.write(message.expandtabs(8))
@@ -296,6 +308,18 @@ def clear_screen(enabled=True):
             os.system('clear')
     except Exception:
         print("* Cannot clear the screen contents")
+
+
+# Debug print helper - only prints if DEBUG_MODE is enabled
+def debug_print(message):
+    global STDOUT_AT_START_OF_LINE
+    if DEBUG_MODE:
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        prefix = ""
+        if not STDOUT_AT_START_OF_LINE:
+            prefix = "\n"
+        print(f"{prefix}[DEBUG {timestamp}] {message}")
+        STDOUT_AT_START_OF_LINE = True
 
 
 # Converts absolute value of seconds to human readable format
@@ -857,6 +881,8 @@ def xbox_process_presence_class(presence, platform_short=True):
                         game_name = title.name
                         break
 
+    debug_print(f"Presence data: state={status}, title_name={title_name}, game_name={game_name}, platform={platform}, lastonline={get_date_from_ts(lastonline_ts)}")
+
     return status, title_name, game_name, platform, lastonline_ts
 
 
@@ -865,33 +891,31 @@ def xbox_process_presence_class(presence, platform_short=True):
 # Note: This timestamp only updates when a game session STARTS, not during or at the end
 async def xbox_get_latest_title_played_ts(xbl_client, xuid):
     try:
+        # Fetch 3 items to be safe (sometimes the first one is weird or missing timestamp)
         history_response = await xbl_client.titlehub.get_title_history(
             xuid,
-            max_items=1
+            max_items=3
         )
         if history_response.titles:
-            title = history_response.titles[0]
-            if title.title_history and title.title_history.last_time_played:
-                played_dt = convert_iso_str_to_datetime(title.title_history.last_time_played)
-                if played_dt:
-                    game_name = title.name if hasattr(title, 'name') and title.name else ""
-                    return int(played_dt.timestamp()), game_name
-    except Exception:
-        pass
+            debug_print(f"Fetched {len(history_response.titles)} history items.")
+            for title in history_response.titles:
+                if title.title_history and title.title_history.last_time_played:
+                    played_dt = convert_iso_str_to_datetime(title.title_history.last_time_played)
+                    if played_dt:
+                        game_name = title.name if hasattr(title, 'name') and title.name else ""
+                        debug_print(f"Selection: {game_name} played at {get_date_from_ts(played_dt)}")
+                        return int(played_dt.timestamp()), game_name
+    except Exception as e:
+        debug_print(f"Error in xbox_get_latest_title_played_ts: {e}")
     return 0, ""
 
 
 # Selects the best available last online timestamp (presence vs title history)
-def xbox_get_best_lastonline_ts(lastonline_ts, title_history_ts, verbose=False):
+def xbox_get_best_lastonline_ts(lastonline_ts, title_history_ts):
     # Only use title history if it's significantly newer (20s jitter buffer) OR presence is missing (0)
     if title_history_ts > 0 and (title_history_ts > (lastonline_ts + 20) or lastonline_ts == 0):
-        if verbose:
-            if lastonline_ts > 0:
-                print(f"\n* Using title history timestamp (more recent than presence last_seen)")
-            else:
-                print(f"\n* Using title history timestamp (presence last_seen missing)")
-        return title_history_ts
-    return lastonline_ts
+        return title_history_ts, True
+    return lastonline_ts, False
 
 
 # Gets detailed user information and displays it (for -i/--info mode)
@@ -899,12 +923,16 @@ async def get_user_info(gamertag, client=None, show_friends=False, show_recent_a
 
     # Helper to print step message
     def print_step(msg):
+        global STDOUT_AT_START_OF_LINE
         sys.stdout.write(f"- {msg}".ljust(32))
         sys.stdout.flush()
+        STDOUT_AT_START_OF_LINE = False
 
     # Helper to print OK
     def print_ok():
+        global STDOUT_AT_START_OF_LINE
         print("OK")
+        STDOUT_AT_START_OF_LINE = True
 
     if not client:
         print(f"* Fetching details for Xbox user '{gamertag}'...\n")
@@ -917,9 +945,11 @@ async def get_user_info(gamertag, client=None, show_friends=False, show_recent_a
             session = SignedSession()
             auth_mgr = AuthenticationManager(session, MS_APP_CLIENT_ID, MS_APP_CLIENT_SECRET, "")
             try:
+                debug_print("Loading tokens from file...")
                 with open(MS_AUTH_TOKENS_FILE) as f:
                     tokens = f.read()
                 auth_mgr.oauth = OAuth2TokenResponse.model_validate_json(tokens)
+                debug_print("Tokens loaded successfully.")
             except FileNotFoundError as e:
                 print(f"\n* File {MS_AUTH_TOKENS_FILE} not found or doesn't contain cached tokens! Error: {e}")
                 print("\nAuthorizing via OAuth ...")
@@ -989,10 +1019,11 @@ async def get_user_info(gamertag, client=None, show_friends=False, show_recent_a
     print_ok()
 
     # Fetch title history timestamp as fallback for "appear offline" users
+    lastonline_source_history = False
     if status.lower() == "offline":
         print_step("Checking title history...")
         title_history_ts, _ = await xbox_get_latest_title_played_ts(xbl_client, xuid)
-        lastonline_ts = xbox_get_best_lastonline_ts(lastonline_ts, title_history_ts, verbose=True)
+        lastonline_ts, lastonline_source_history = xbox_get_best_lastonline_ts(lastonline_ts, title_history_ts)
         print_ok()
 
     # Friends
@@ -1070,7 +1101,8 @@ async def get_user_info(gamertag, client=None, show_friends=False, show_recent_a
     print(f"\nStatus:\t\t\t\t{str(status).upper()}")
     if status.lower() == "offline":
         if lastonline_ts > 0:
-            print(f"Last online:\t\t\t{get_date_from_ts(lastonline_ts)}")
+            source_info = " (via title history)" if lastonline_source_history else ""
+            print(f"Last online:\t\t\t{get_date_from_ts(lastonline_ts)}{source_info}")
     else:
         if game_name:
             print(f"Current game:\t\t\t{game_name}")
@@ -1313,18 +1345,24 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
 
         # Helper to print step message
         def _print_step(msg):
+            global STDOUT_AT_START_OF_LINE
             sys.stdout.write(f"- {msg}".ljust(32))
             sys.stdout.flush()
+            STDOUT_AT_START_OF_LINE = False
 
         # Helper to print OK
         def _print_ok():
+            global STDOUT_AT_START_OF_LINE
             print("OK")
+            STDOUT_AT_START_OF_LINE = True
 
         _print_step("Authenticating with Xbox...")
         try:
+            debug_print("Loading tokens from file...")
             with open(MS_AUTH_TOKENS_FILE) as f:
                 tokens = f.read()
             auth_mgr.oauth = OAuth2TokenResponse.model_validate_json(tokens)
+            debug_print("Tokens loaded successfully.")
         except FileNotFoundError as e:
             print(f"\n* File {MS_AUTH_TOKENS_FILE} not found or doesn't contain cached tokens! Error: {e}")
             print("\nAuthorizing via OAuth ...")
@@ -1336,7 +1374,9 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
 
         # Refresh tokens, just in case
         try:
+            debug_print("Refreshing tokens...")
             await auth_mgr.refresh_tokens()
+            debug_print("Tokens refreshed successfully.")
         except HTTPStatusError as e:
             print(f"* Could not refresh tokens from {MS_AUTH_TOKENS_FILE}! Error: {e}\nYou might have to delete the tokens file and re-authenticate if refresh token is expired")
             sys.exit(1)
@@ -1395,12 +1435,21 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
 
         # Establish title history baseline
         title_history_ts, title_history_game = await xbox_get_latest_title_played_ts(xbl_client, xuid)
-        title_history_ts_old = title_history_ts
-        title_history_game_old = title_history_game
 
+        if title_history_ts > 0:
+            title_history_ts_old = title_history_ts
+            title_history_game_old = title_history_game
+
+        # Only use this when user appears offline - otherwise presence data is accurate
         if status == "offline":
-            lastonline_ts = xbox_get_best_lastonline_ts(lastonline_ts, title_history_ts, verbose=True)
-
+            debug_print("User appears offline, checking title history fallback...")
+            title_history_ts, _ = await xbox_get_latest_title_played_ts(xbl_client, xuid)
+            lastonline_ts, fallback_used = xbox_get_best_lastonline_ts(lastonline_ts, title_history_ts)
+            if fallback_used:
+                debug_print(f"Using title history timestamp as fallback: {get_date_from_ts(lastonline_ts)}")
+                lastonline_ts = title_history_ts
+            else:
+                debug_print("Presence timestamp is newer than title history.")
         if not status:
             print(f"* Error: Cannot get status for user {xbox_gamertag}")
             sys.exit(1)
@@ -1432,7 +1481,7 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
 
                 if last_status_ts > 0:
                     last_status_dt_str = get_short_date_from_ts(last_status_ts, show_weekday=False, always_show_year=True)
-                    print(f"* Last status read from file: {str(last_status.upper())} ({last_status_dt_str})")
+                    print(f"* Last status read from file: {str(last_status).upper()} ({last_status_dt_str})")
 
                     if lastonline_ts and status == "offline":
                         if lastonline_ts >= last_status_ts:
@@ -1508,11 +1557,19 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
                 presence = await xbl_client.presence.get_presence(str(xuid), PresenceLevel.ALL)
                 status, title_name, game_name, platform, lastonline_ts = xbox_process_presence_class(presence)
 
-                title_history_ts, title_history_game = await xbox_get_latest_title_played_ts(xbl_client, xuid)
+                if status == "offline":
+                    debug_print("User is offline, checking title history fallback...")
+                    title_history_ts, title_history_game = await xbox_get_latest_title_played_ts(xbl_client, xuid)
 
+                    debug_print(f"Current status: {status}")
+                    debug_print(f"Title history: {title_history_ts} ('{title_history_game}')")
+                    debug_print(f"Baseline:      {title_history_ts_old} ('{title_history_game_old}')")
+
+                    # While user is online, continuously update the baseline
                 if status != "offline":
-                    title_history_ts_old = title_history_ts
-                    title_history_game_old = title_history_game
+                    if title_history_ts > 0:
+                        title_history_ts_old = title_history_ts
+                        title_history_game_old = title_history_game
 
                 if not status:
                     raise ValueError('Xbox user status is empty')
@@ -1562,7 +1619,7 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
 
                 m_subject_was_since = f", was {status_old}: {get_range_of_dates_from_tss(int(status_ts_old), int(status_ts), short=True)}"
                 m_subject_after = calculate_timespan(int(status_ts), int(status_ts_old), show_seconds=False)
-                m_body_was_since = f" ({get_range_of_dates_from_tss(int(status_ts_old), int(status_ts), short=True)})"
+                m_body_was_since = f" ({get_range_of_dates_from_tss(int(status_ts_old), int(status_ts), short=True)})\n\nUser was available for {calculate_timespan(int(status_ts), int(status_online_start_ts), show_seconds=False)} ({get_range_of_dates_from_tss(int(status_online_start_ts), int(status_ts), short=True)})"
 
                 m_body_short_offline_msg = ""
 
@@ -1666,7 +1723,7 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
 
             # Detect gaming activity for "appear offline" users via title history
             # This triggers when we detect a new game session started while user appears offline
-            if status == "offline" and title_history_ts > 0 and title_history_ts > title_history_ts_old:
+            if status == "offline" and title_history_ts > 0 and title_history_ts_old > 0 and title_history_ts > title_history_ts_old:
                 activity_detected_ts = get_date_from_ts(title_history_ts)
                 game_info = f" '{title_history_game}'" if title_history_game else ""
                 print(f"User detected playing a game{game_info} (via title history)! Started: {activity_detected_ts}")
@@ -1707,7 +1764,7 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
 
 
 def main():
-    global CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_CHECK_COUNTER, MS_APP_CLIENT_ID, MS_APP_CLIENT_SECRET, CSV_FILE, DISABLE_LOGGING, XBOX_LOGFILE, ACTIVE_INACTIVE_NOTIFICATION, GAME_CHANGE_NOTIFICATION, STATUS_NOTIFICATION, ERROR_NOTIFICATION, XBOX_CHECK_INTERVAL, XBOX_ACTIVE_CHECK_INTERVAL, SMTP_PASSWORD, stdout_bck, MS_AUTH_TOKENS_FILE
+    global CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_CHECK_COUNTER, MS_APP_CLIENT_ID, MS_APP_CLIENT_SECRET, CSV_FILE, DISABLE_LOGGING, XBOX_LOGFILE, ACTIVE_INACTIVE_NOTIFICATION, GAME_CHANGE_NOTIFICATION, STATUS_NOTIFICATION, ERROR_NOTIFICATION, XBOX_CHECK_INTERVAL, XBOX_ACTIVE_CHECK_INTERVAL, SMTP_PASSWORD, stdout_bck, MS_AUTH_TOKENS_FILE, DEBUG_MODE
 
     if "--generate-config" in sys.argv:
         config_content = CONFIG_BLOCK.strip("\n") + "\n"
@@ -1830,7 +1887,7 @@ def main():
         dest="notify_errors",
         action="store_false",
         default=None,
-        help="Disable email on errors"
+        help="Do not email on errors"
     )
     notify.add_argument(
         "--send-test-email",
@@ -1910,6 +1967,13 @@ def main():
         action="store_true",
         default=None,
         help="Disable logging to xbox_monitor_<gamertag>.log"
+    )
+    opts.add_argument(
+        "--debug",
+        dest="debug_mode",
+        action="store_true",
+        default=None,
+        help="Enable debug mode for technical technical logging"
     )
 
     args = parser.parse_args()
@@ -2047,6 +2111,8 @@ def main():
 
     if args.disable_logging is True:
         DISABLE_LOGGING = True
+    if args.debug_mode is not None:
+        DEBUG_MODE = args.debug_mode
 
     if not DISABLE_LOGGING:
         log_path = Path(os.path.expanduser(XBOX_LOGFILE))
@@ -2088,6 +2154,7 @@ def main():
     print(f"* Xbox token cache file:\t{MS_AUTH_TOKENS_FILE or 'None'}")
     print(f"* Configuration file:\t\t{cfg_path}")
     print(f"* Dotenv file:\t\t\t{env_path or 'None'}")
+    print(f"* Debug mode:\t\t\t{DEBUG_MODE}")
     print(f"* Local timezone:\t\t{LOCAL_TIMEZONE}")
 
     out = f"\nMonitoring user with Xbox gamer tag {args.xbox_gamertag}"
