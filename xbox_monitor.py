@@ -881,6 +881,19 @@ async def xbox_get_latest_title_played_ts(xbl_client, xuid):
     return 0, ""
 
 
+# Selects the best available last online timestamp (presence vs title history)
+def xbox_get_best_lastonline_ts(lastonline_ts, title_history_ts, verbose=False):
+    # Only use title history if it's significantly newer (20s jitter buffer) OR presence is missing (0)
+    if title_history_ts > 0 and (title_history_ts > (lastonline_ts + 20) or lastonline_ts == 0):
+        if verbose:
+            if lastonline_ts > 0:
+                print(f"\n* Using title history timestamp (more recent than presence last_seen)")
+            else:
+                print(f"\n* Using title history timestamp (presence last_seen missing)")
+        return title_history_ts
+    return lastonline_ts
+
+
 # Gets detailed user information and displays it (for -i/--info mode)
 async def get_user_info(gamertag, client=None, show_friends=False, show_recent_achievements=False, show_recent_games=False, achievements_count=5, games_count=10):
 
@@ -979,8 +992,7 @@ async def get_user_info(gamertag, client=None, show_friends=False, show_recent_a
     if status.lower() == "offline":
         print_step("Checking title history...")
         title_history_ts, _ = await xbox_get_latest_title_played_ts(xbl_client, xuid)
-        if title_history_ts > 0 and title_history_ts > lastonline_ts:
-            lastonline_ts = title_history_ts
+        lastonline_ts = xbox_get_best_lastonline_ts(lastonline_ts, title_history_ts, verbose=True)
         print_ok()
 
     # Friends
@@ -1387,9 +1399,7 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
         title_history_game_old = title_history_game
 
         if status == "offline":
-            if title_history_ts > 0 and title_history_ts > lastonline_ts:
-                print(f"\n* Using title history timestamp (more recent than presence last_seen)")
-                lastonline_ts = title_history_ts
+            lastonline_ts = xbox_get_best_lastonline_ts(lastonline_ts, title_history_ts, verbose=True)
 
         if not status:
             print(f"* Error: Cannot get status for user {xbox_gamertag}")
