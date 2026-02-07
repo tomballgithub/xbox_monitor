@@ -897,14 +897,23 @@ async def xbox_get_latest_title_played_ts(xbl_client, xuid):
             max_items=3
         )
         if history_response.titles:
-            debug_print(f"Fetched {len(history_response.titles)} history items.")
-            for title in history_response.titles:
+            debug_print(f"Fetched {len(history_response.titles)} history items:")
+            best_ts = 0
+            best_game = ""
+            for i, title in enumerate(history_response.titles, 1):
                 if title.title_history and title.title_history.last_time_played:
                     played_dt = convert_iso_str_to_datetime(title.title_history.last_time_played)
                     if played_dt:
-                        game_name = title.name if hasattr(title, 'name') and title.name else ""
-                        debug_print(f"Selection: {game_name} played at {get_date_from_ts(played_dt)}")
-                        return int(played_dt.timestamp()), game_name
+                        ts = int(played_dt.timestamp())
+                        game_name = title.name if hasattr(title, 'name') and title.name else "Unknown"
+                        debug_print(f"  {i}. {game_name} played at {get_date_from_ts(ts)}")
+                        if best_ts == 0:
+                            best_ts = ts
+                            best_game = game_name
+
+            if best_ts > 0:
+                debug_print(f"Selected title history: {best_game} at {get_date_from_ts(best_ts)}")
+            return best_ts, best_game
     except Exception as e:
         debug_print(f"Error in xbox_get_latest_title_played_ts: {e}")
     return 0, ""
@@ -914,7 +923,9 @@ async def xbox_get_latest_title_played_ts(xbl_client, xuid):
 def xbox_get_best_lastonline_ts(lastonline_ts, title_history_ts):
     # Only use title history if it's significantly newer (20s jitter buffer) OR presence is missing (0)
     if title_history_ts > 0 and (title_history_ts > (lastonline_ts + 20) or lastonline_ts == 0):
+        debug_print(f"Decision: Using Title History timestamp (history={get_date_from_ts(title_history_ts)} > presence={get_date_from_ts(lastonline_ts)})")
         return title_history_ts, True
+    debug_print(f"Decision: Using Presence timestamp (presence={get_date_from_ts(lastonline_ts)} >= history={get_date_from_ts(title_history_ts)})")
     return lastonline_ts, False
 
 
@@ -1442,14 +1453,10 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
 
         # Only use this when user appears offline - otherwise presence data is accurate
         if status == "offline":
-            debug_print("User appears offline, checking title history fallback...")
-            title_history_ts, _ = await xbox_get_latest_title_played_ts(xbl_client, xuid)
+            debug_print("User is offline, using already fetched title history fallback data...")
             lastonline_ts, fallback_used = xbox_get_best_lastonline_ts(lastonline_ts, title_history_ts)
             if fallback_used:
-                debug_print(f"Using title history timestamp as fallback: {get_date_from_ts(lastonline_ts)}")
                 lastonline_ts = title_history_ts
-            else:
-                debug_print("Presence timestamp is newer than title history.")
         if not status:
             print(f"* Error: Cannot get status for user {xbox_gamertag}")
             sys.exit(1)
