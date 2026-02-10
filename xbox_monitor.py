@@ -1716,12 +1716,6 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
                     debug_print(f"Title history: {title_history_ts} ('{title_history_game}')")
                     debug_print(f"Baseline:      {title_history_ts_old} ('{title_history_game_old}')")
 
-                    # While user is online, continuously update the baseline
-                if status != "offline":
-                    if title_history_ts > 0:
-                        title_history_ts_old = title_history_ts
-                        title_history_game_old = title_history_game
-
                 if not status:
                     raise ValueError('Xbox user status is empty')
                 email_sent = False
@@ -1793,6 +1787,10 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
 
                 # Player got offline
                 if status_old and status_old != "offline" and status == "offline":
+                    # Sync baseline with current title history to prevent false "appear offline" detection
+                    if title_history_ts > 0:
+                        title_history_ts_old = title_history_ts
+                        title_history_game_old = title_history_game
                     if status_online_start_ts > 0:
                         m_subject_after = calculate_timespan(int(status_ts), int(status_online_start_ts), show_seconds=False)
                         online_since_msg = f"(after {calculate_timespan(int(status_ts), int(status_online_start_ts), show_seconds=False)}: {get_range_of_dates_from_tss(int(status_online_start_ts), int(status_ts), short=True)})"
