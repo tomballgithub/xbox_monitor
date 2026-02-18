@@ -322,6 +322,13 @@ def debug_print(message):
         STDOUT_AT_START_OF_LINE = True
 
 
+# Returns a debug-friendly timestamp representation, prevents "Unix epoch" confusion when ts is 0/missing
+def get_debug_date_from_ts(ts):
+    if isinstance(ts, (int, float)) and ts <= 0:
+        return "N/A (missing/zero)"
+    return get_date_from_ts(ts)
+
+
 # Converts absolute value of seconds to human readable format
 def display_time(seconds, granularity=2):
     intervals = (
@@ -843,10 +850,17 @@ def xbox_process_presence_class(presence, platform_short=True):
             status = str(presence.state).lower()
 
     last_seen_class = ""
+    last_seen_raw_title = ""
+    last_seen_raw_ts = ""
+    last_seen_raw_device = ""
+    presence_titles_dbg = []
 
     if 'last_seen' in dir(presence):
         if presence.last_seen:
             last_seen_class = presence.last_seen
+            last_seen_raw_title = getattr(last_seen_class, "title_name", "")
+            last_seen_raw_ts = getattr(last_seen_class, "timestamp", "")
+            last_seen_raw_device = getattr(last_seen_class, "device_type", "")
             if 'title_name' in dir(last_seen_class):
                 if last_seen_class.title_name:
                     if last_seen_class.title_name not in ("Online", "Home"):
@@ -877,11 +891,20 @@ def xbox_process_presence_class(presence, platform_short=True):
             if 'titles' in dir(devices_class[0]):
                 titles_class = devices_class[0].titles
                 for title in titles_class:
+                    t_name = getattr(title, "name", "")
+                    t_placement = getattr(title, "placement", "")
+                    if t_name:
+                        presence_titles_dbg.append(f"{t_name} [{t_placement}]")
                     if title.name not in ("Online", "Home", "Xbox App") and title.placement != "Background":
                         game_name = title.name
                         break
 
-    debug_print(f"Presence data: state={status}, title_name={title_name}, game_name={game_name}, platform={platform}, lastonline={get_date_from_ts(lastonline_ts)}")
+    debug_print(f"Presence data: state={status}, title_name={title_name}, game_name={game_name}, platform={platform}, lastonline={get_debug_date_from_ts(lastonline_ts)}")
+    debug_print(f"Presence raw: last_seen_title={last_seen_raw_title}, last_seen_device={last_seen_raw_device}, last_seen_timestamp={last_seen_raw_ts}")
+    if presence_titles_dbg:
+        debug_print(f"Presence device titles: {', '.join(presence_titles_dbg)}")
+    else:
+        debug_print("Presence device titles: none")
 
     return status, title_name, game_name, platform, lastonline_ts
 
@@ -923,9 +946,9 @@ async def xbox_get_latest_title_played_ts(xbl_client, xuid):
 def xbox_get_best_lastonline_ts(lastonline_ts, title_history_ts):
     # Only use title history if it's significantly newer (20s jitter buffer) OR presence is missing (0)
     if title_history_ts > 0 and (title_history_ts > (lastonline_ts + 20) or lastonline_ts == 0):
-        debug_print(f"Decision: Using Title History timestamp (history={get_date_from_ts(title_history_ts)} > presence={get_date_from_ts(lastonline_ts)})")
+        debug_print(f"Decision: Using Title History timestamp (history={get_debug_date_from_ts(title_history_ts)} > presence={get_debug_date_from_ts(lastonline_ts)})")
         return title_history_ts, True
-    debug_print(f"Decision: Using Presence timestamp (presence={get_date_from_ts(lastonline_ts)} >= history={get_date_from_ts(title_history_ts)})")
+    debug_print(f"Decision: Using Presence timestamp (presence={get_debug_date_from_ts(lastonline_ts)} >= history={get_debug_date_from_ts(title_history_ts)})")
     return lastonline_ts, False
 
 
@@ -1711,10 +1734,13 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
                 if status == "offline":
                     debug_print("User is offline, checking title history fallback...")
                     title_history_ts, title_history_game = await xbox_get_latest_title_played_ts(xbl_client, xuid)
+                    effective_lastactive_ts, source_is_history = xbox_get_best_lastonline_ts(lastonline_ts, title_history_ts)
+                    lastactive_source = "title_history" if source_is_history else "presence_last_seen"
 
                     debug_print(f"Current status: {status}")
                     debug_print(f"Title history: {title_history_ts} ('{title_history_game}')")
                     debug_print(f"Baseline:      {title_history_ts_old} ('{title_history_game_old}')")
+                    debug_print(f"Last active chosen: source={lastactive_source}, ts={get_debug_date_from_ts(effective_lastactive_ts)}")
 
                 if not status:
                     raise ValueError('Xbox user status is empty')
