@@ -1508,6 +1508,9 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
     game_total_after_offline_counted = False
     title_history_ts_old = 0  # Track previous title history timestamp for "appear offline" activity detection
     title_history_game_old = ""  # Track game name for "appear offline" activity detection
+    presence_lastonline_cache_ts = 0  # Last known valid presence.last_seen timestamp
+    offline_grace_attempts = 3
+    offline_grace_delay_seconds = 2
 
     try:
         if csv_file_name:
@@ -1613,6 +1616,8 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
             sys.exit(1)
 
         status, title_name, game_name, platform, lastonline_ts = xbox_process_presence_class(presence, False)
+        if lastonline_ts > 0:
+            presence_lastonline_cache_ts = lastonline_ts
 
         # Establish title history baseline
         title_history_ts, title_history_game = await xbox_get_latest_title_played_ts(xbl_client, xuid)
@@ -1733,17 +1738,67 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
             try:
                 presence = await xbl_client.presence.get_presence(str(xuid), PresenceLevel.ALL)
                 status, title_name, game_name, platform, lastonline_ts = xbox_process_presence_class(presence)
+                if lastonline_ts > 0:
+                    presence_lastonline_cache_ts = lastonline_ts
+
+                if status == "offline":
+                    # Give presence a short grace window when transitioning to offline with missing last_seen
+                    if status_old != "offline" and lastonline_ts <= 0:
+                        debug_print(f"Offline transition with missing presence timestamp, retrying presence up to {offline_grace_attempts}x every {offline_grace_delay_seconds}s...")
+                        for retry_num in range(1, offline_grace_attempts + 1):
+                            await asyncio.sleep(offline_grace_delay_seconds)
+                            retry_presence = await xbl_client.presence.get_presence(str(xuid), PresenceLevel.ALL)
+                            retry_status, retry_title_name, retry_game_name, retry_platform, retry_lastonline_ts = xbox_process_presence_class(retry_presence)
+                            debug_print(f"Grace retry {retry_num}/{offline_grace_attempts}: state={retry_status}, lastonline={get_debug_date_from_ts(retry_lastonline_ts)}")
+
+                            # Use refreshed offline payload if it now includes last_seen
+                            if retry_status == "offline" and retry_lastonline_ts > 0:
+                                status = retry_status
+                                title_name = retry_title_name
+                                game_name = retry_game_name
+                                platform = retry_platform
+                                lastonline_ts = retry_lastonline_ts
+                                presence_lastonline_cache_ts = retry_lastonline_ts
+                                debug_print("Grace retry succeeded: using refreshed offline presence last_seen timestamp.")
+                                break
+
+                            # If status bounced back online, stop offline fallback for this poll.
+                            if retry_status and retry_status != "offline":
+                                status = retry_status
+                                title_name = retry_title_name
+                                game_name = retry_game_name
+                                platform = retry_platform
+                                lastonline_ts = retry_lastonline_ts
+                                if retry_lastonline_ts > 0:
+                                    presence_lastonline_cache_ts = retry_lastonline_ts
+                                debug_print("Grace retry indicates user is no longer offline; skipping offline fallback in this poll.")
+                                break
 
                 if status == "offline":
                     debug_print("User is offline, checking title history fallback...")
                     title_history_ts, title_history_game = await xbox_get_latest_title_played_ts(xbl_client, xuid)
-                    effective_lastactive_ts, source_is_history = xbox_get_best_lastonline_ts(lastonline_ts, title_history_ts)
-                    lastactive_source = "title_history" if source_is_history else "presence_last_seen"
+                    presence_ts_for_decision = lastonline_ts
+                    lastactive_source = "presence_last_seen_live"
+                    lastactive_confidence = "high"
+
+                    if presence_ts_for_decision <= 0 and presence_lastonline_cache_ts > 0:
+                        presence_ts_for_decision = presence_lastonline_cache_ts
+                        lastactive_source = "presence_last_seen_cached"
+                        lastactive_confidence = "medium"
+                        debug_print(f"Using cached presence last_seen for decision: {get_debug_date_from_ts(presence_ts_for_decision)}")
+                    elif presence_ts_for_decision <= 0:
+                        lastactive_source = "presence_last_seen_missing"
+                        lastactive_confidence = "none"
+
+                    effective_lastactive_ts, source_is_history = xbox_get_best_lastonline_ts(presence_ts_for_decision, title_history_ts)
+                    if source_is_history:
+                        lastactive_source = "title_history_fallback"
+                        lastactive_confidence = "low"
 
                     debug_print(f"Current status: {status}")
                     debug_print(f"Title history: {title_history_ts} ('{title_history_game}')")
                     debug_print(f"Baseline:      {title_history_ts_old} ('{title_history_game_old}')")
-                    debug_print(f"Last active chosen: source={lastactive_source}, ts={get_debug_date_from_ts(effective_lastactive_ts)}")
+                    debug_print(f"Last active chosen: source={lastactive_source}, confidence={lastactive_confidence}, ts={get_debug_date_from_ts(effective_lastactive_ts)}")
 
                 if not status:
                     raise ValueError('Xbox user status is empty')
