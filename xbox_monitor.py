@@ -8,7 +8,7 @@ https://github.com/misiektoja/xbox_monitor/
 
 Python pip3 requirements:
 
-xbox-webapi
+python-xbox
 requests
 python-dateutil
 httpx
@@ -675,7 +675,7 @@ def get_hour_min_from_ts(ts, show_seconds=False):
 
 
 # Returns the range between two timestamps/datetime objects; eg. Sun 21 Apr 14:09 - 14:15
-def get_range_of_dates_from_tss(ts1, ts2, between_sep=" - ", short=False):
+def get_range_of_dates_from_tss(ts1, ts2, between_sep=" - ", short=False, always_show_year=False):
     tz = pytz.timezone(LOCAL_TIMEZONE)
 
     if isinstance(ts1, datetime):
@@ -701,12 +701,15 @@ def get_range_of_dates_from_tss(ts1, ts2, between_sep=" - ", short=False):
 
     if ts1_strf == ts2_strf:
         if short:
-            out_str = f"{get_short_date_from_ts(ts1_new)}{between_sep}{get_hour_min_from_ts(ts2_new)}"
+            if always_show_year:
+                out_str = f"{get_short_date_from_ts(ts1_new, always_show_year=True)}{between_sep}{get_short_date_from_ts(ts2_new, always_show_year=True)}"
+            else:
+                out_str = f"{get_short_date_from_ts(ts1_new)}{between_sep}{get_hour_min_from_ts(ts2_new)}"
         else:
             out_str = f"{get_date_from_ts(ts1_new)}{between_sep}{get_hour_min_from_ts(ts2_new, show_seconds=True)}"
     else:
         if short:
-            out_str = f"{get_short_date_from_ts(ts1_new)}{between_sep}{get_short_date_from_ts(ts2_new)}"
+            out_str = f"{get_short_date_from_ts(ts1_new, always_show_year=always_show_year)}{between_sep}{get_short_date_from_ts(ts2_new, always_show_year=always_show_year)}"
         else:
             out_str = f"{get_date_from_ts(ts1_new)}{between_sep}{get_date_from_ts(ts2_new)}"
 
@@ -1786,11 +1789,12 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
                     print(f"* Cannot save last status to '{xbox_last_status_file}' file: {e}")
 
                 print(f"Xbox user {xbox_gamertag} changed status from {status_old} to {status}{platform_str}")
-                print(f"User was {status_old} for {calculate_timespan(int(status_ts), int(status_ts_old))} ({get_range_of_dates_from_tss(int(status_ts_old), int(status_ts), short=True)})")
+                status_range = get_range_of_dates_from_tss(int(status_ts_old), int(status_ts), short=True, always_show_year=True)
+                print(f"User was {status_old} for {calculate_timespan(int(status_ts), int(status_ts_old))} ({status_range})")
 
-                m_subject_was_since = f", was {status_old}: {get_range_of_dates_from_tss(int(status_ts_old), int(status_ts), short=True)}"
+                m_subject_was_since = f", was {status_old}: {status_range}"
                 m_subject_after = calculate_timespan(int(status_ts), int(status_ts_old), show_seconds=False)
-                m_body_was_since = f" ({get_range_of_dates_from_tss(int(status_ts_old), int(status_ts), short=True)})\n\nUser was available for {calculate_timespan(int(status_ts), int(status_online_start_ts), show_seconds=False)} ({get_range_of_dates_from_tss(int(status_online_start_ts), int(status_ts), short=True)})"
+                m_body_was_since = f" ({status_range})"
 
                 m_body_short_offline_msg = ""
 
@@ -1819,9 +1823,10 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
                         title_history_game_old = title_history_game
                     if status_online_start_ts > 0:
                         m_subject_after = calculate_timespan(int(status_ts), int(status_online_start_ts), show_seconds=False)
-                        online_since_msg = f"(after {calculate_timespan(int(status_ts), int(status_online_start_ts), show_seconds=False)}: {get_range_of_dates_from_tss(int(status_online_start_ts), int(status_ts), short=True)})"
-                        m_subject_was_since = f", was available: {get_range_of_dates_from_tss(int(status_online_start_ts), int(status_ts), short=True)}"
-                        m_body_was_since = f" ({get_range_of_dates_from_tss(int(status_ts_old), int(status_ts), short=True)})\n\nUser was available for {calculate_timespan(int(status_ts), int(status_online_start_ts), show_seconds=False)} ({get_range_of_dates_from_tss(int(status_online_start_ts), int(status_ts), short=True)})"
+                        online_range = get_range_of_dates_from_tss(int(status_online_start_ts), int(status_ts), short=True, always_show_year=True)
+                        online_since_msg = f"(after {calculate_timespan(int(status_ts), int(status_online_start_ts), show_seconds=False)}: {online_range})"
+                        m_subject_was_since = f", was available: {online_range}"
+                        m_body_was_since = f" ({status_range})\n\nUser was available for {calculate_timespan(int(status_ts), int(status_online_start_ts), show_seconds=False)} ({online_range})"
                     else:
                         online_since_msg = ""
                     if games_number > 0:
@@ -1863,13 +1868,14 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
                 # User changed the game
                 if game_name_old and game_name:
                     print(f"Xbox user {xbox_gamertag} changed game from '{game_name_old}' to '{game_name}'{platform_str} after {calculate_timespan(int(game_ts), int(game_ts_old))}")
-                    print(f"User played game from {get_range_of_dates_from_tss(int(game_ts_old), int(game_ts), short=True, between_sep=' to ')}")
+                    game_range = get_range_of_dates_from_tss(int(game_ts_old), int(game_ts), short=True, always_show_year=True, between_sep=' to ')
+                    print(f"User played game from {game_range}")
                     game_total_ts += (int(game_ts) - int(game_ts_old))
                     games_number += 1
-                    m_body = f"Xbox user {xbox_gamertag} changed game from '{game_name_old}' to '{game_name}'{platform_str} after {calculate_timespan(int(game_ts), int(game_ts_old))}\n\nUser played game from {get_range_of_dates_from_tss(int(game_ts_old), int(game_ts), short=True, between_sep=' to ')}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
+                    m_body = f"Xbox user {xbox_gamertag} changed game from '{game_name_old}' to '{game_name}'{platform_str} after {calculate_timespan(int(game_ts), int(game_ts_old))}\n\nUser played game from {game_range}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
                     if platform:
                         platform_str = f"{platform}, "
-                    m_subject = f"Xbox user {xbox_gamertag} changed game to '{game_name}' ({platform_str}after {calculate_timespan(int(game_ts), int(game_ts_old), show_seconds=False)}: {get_range_of_dates_from_tss(int(game_ts_old), int(game_ts), short=True)})"
+                    m_subject = f"Xbox user {xbox_gamertag} changed game to '{game_name}' ({platform_str}after {calculate_timespan(int(game_ts), int(game_ts_old), show_seconds=False)}: {get_range_of_dates_from_tss(int(game_ts_old), int(game_ts), short=True, always_show_year=True)})"
 
                 # User started playing new game
                 elif not game_name_old and game_name:
@@ -1881,11 +1887,12 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
                 # User stopped playing the game
                 elif game_name_old and not game_name:
                     print(f"Xbox user {xbox_gamertag} stopped playing '{game_name_old}' after {calculate_timespan(int(game_ts), int(game_ts_old))}")
-                    print(f"User played game from {get_range_of_dates_from_tss(int(game_ts_old), int(game_ts), short=True, between_sep=' to ')}")
+                    game_range = get_range_of_dates_from_tss(int(game_ts_old), int(game_ts), short=True, always_show_year=True, between_sep=' to ')
+                    print(f"User played game from {game_range}")
                     if not game_total_after_offline_counted:
                         game_total_ts += (int(game_ts) - int(game_ts_old))
-                    m_subject = f"Xbox user {xbox_gamertag} stopped playing '{game_name_old}' (after {calculate_timespan(int(game_ts), int(game_ts_old), show_seconds=False)}: {get_range_of_dates_from_tss(int(game_ts_old), int(game_ts), short=True)})"
-                    m_body = f"Xbox user {xbox_gamertag} stopped playing '{game_name_old}' after {calculate_timespan(int(game_ts), int(game_ts_old))}\n\nUser played game from {get_range_of_dates_from_tss(int(game_ts_old), int(game_ts), short=True, between_sep=' to ')}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
+                    m_subject = f"Xbox user {xbox_gamertag} stopped playing '{game_name_old}' (after {calculate_timespan(int(game_ts), int(game_ts_old), show_seconds=False)}: {get_range_of_dates_from_tss(int(game_ts_old), int(game_ts), short=True, always_show_year=True)})"
+                    m_body = f"Xbox user {xbox_gamertag} stopped playing '{game_name_old}' after {calculate_timespan(int(game_ts), int(game_ts_old))}\n\nUser played game from {game_range}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
 
                 change = True
 
