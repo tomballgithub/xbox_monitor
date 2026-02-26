@@ -322,6 +322,50 @@ def debug_print(message):
         STDOUT_AT_START_OF_LINE = True
 
 
+# Starts interactive OAuth flow and stores the new OAuth token on the auth manager
+async def oauth_interactive_auth(auth_mgr):
+    print("\nAuthorizing via OAuth ...")
+    url = auth_mgr.generate_authorization_url()
+    print(f"\nOpen this URL in your web browser to authorize:\n{url}")
+    authorization_code = input("\nEnter authorization code (part after '?code=' in callback URL): ").strip()
+    if not authorization_code:
+        raise ValueError("Authorization code cannot be empty")
+    auth_mgr.oauth = await auth_mgr.request_oauth_token(authorization_code)
+
+
+# Loads cached OAuth tokens, refreshes them and falls back to interactive re-authentication when needed
+async def authenticate_and_refresh_tokens(auth_mgr):
+    token_file_loaded = False
+    try:
+        debug_print("Loading tokens from file...")
+        with open(MS_AUTH_TOKENS_FILE) as f:
+            tokens = f.read()
+        auth_mgr.oauth = OAuth2TokenResponse.model_validate_json(tokens)
+        token_file_loaded = True
+        debug_print("Tokens loaded successfully.")
+    except FileNotFoundError as e:
+        print(f"\n* File {MS_AUTH_TOKENS_FILE} not found or doesn't contain cached tokens! Error: {e}")
+    except Exception as e:
+        print(f"\n* Could not load cached tokens from {MS_AUTH_TOKENS_FILE}: {e}")
+
+    if not token_file_loaded:
+        await oauth_interactive_auth(auth_mgr)
+
+    try:
+        debug_print("Refreshing tokens...")
+        await auth_mgr.refresh_tokens()
+        debug_print("Tokens refreshed successfully.")
+    except HTTPStatusError as e:
+        print(f"\n* Cached token refresh failed ({e}). Re-authentication is required.")
+        await oauth_interactive_auth(auth_mgr)
+        debug_print("Refreshing tokens after interactive OAuth...")
+        await auth_mgr.refresh_tokens()
+        debug_print("Tokens refreshed successfully after re-authentication.")
+
+    with open(MS_AUTH_TOKENS_FILE, mode="w") as f:
+        f.write(auth_mgr.oauth.model_dump_json())
+
+
 # Returns a debug-friendly timestamp representation, prevents "Unix epoch" confusion when ts is 0/missing
 def get_debug_date_from_ts(ts):
     if isinstance(ts, (int, float)) and ts <= 0:
@@ -981,31 +1025,7 @@ async def get_user_info(gamertag, client=None, show_friends=False, show_recent_a
         try:
             session = SignedSession()
             auth_mgr = AuthenticationManager(session, MS_APP_CLIENT_ID, MS_APP_CLIENT_SECRET, "")
-            try:
-                debug_print("Loading tokens from file...")
-                with open(MS_AUTH_TOKENS_FILE) as f:
-                    tokens = f.read()
-                auth_mgr.oauth = OAuth2TokenResponse.model_validate_json(tokens)
-                debug_print("Tokens loaded successfully.")
-            except FileNotFoundError as e:
-                print(f"\n* File {MS_AUTH_TOKENS_FILE} not found or doesn't contain cached tokens! Error: {e}")
-                print("\nAuthorizing via OAuth ...")
-                url = auth_mgr.generate_authorization_url()
-                print(f"\nOpen this URL in your web browser to authorize:\n{url}")
-                authorization_code = input("\nEnter authorization code (part after '?code=' in callback URL): ")
-                tokens = await auth_mgr.request_oauth_token(authorization_code)
-                auth_mgr.oauth = tokens
-
-            # Refresh tokens, just in case
-            try:
-                await auth_mgr.refresh_tokens()
-            except HTTPStatusError as e:
-                print(f"* Could not refresh tokens from {MS_AUTH_TOKENS_FILE}! Error: {e}\nYou might have to delete the tokens file and re-authenticate if refresh token is expired")
-                sys.exit(1)
-
-            # Save the refreshed/updated tokens
-            with open(MS_AUTH_TOKENS_FILE, mode="w") as f:
-                f.write(auth_mgr.oauth.model_dump_json())
+            await authenticate_and_refresh_tokens(auth_mgr)
 
             xbl_client = XboxLiveClient(auth_mgr)
         except Exception as e:
@@ -1541,33 +1561,7 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
             STDOUT_AT_START_OF_LINE = True
 
         _print_step("Authenticating with Xbox...")
-        try:
-            debug_print("Loading tokens from file...")
-            with open(MS_AUTH_TOKENS_FILE) as f:
-                tokens = f.read()
-            auth_mgr.oauth = OAuth2TokenResponse.model_validate_json(tokens)
-            debug_print("Tokens loaded successfully.")
-        except FileNotFoundError as e:
-            print(f"\n* File {MS_AUTH_TOKENS_FILE} not found or doesn't contain cached tokens! Error: {e}")
-            print("\nAuthorizing via OAuth ...")
-            url = auth_mgr.generate_authorization_url()
-            print(f"\nOpen this URL in your web browser to authorize:\n{url}")
-            authorization_code = input("\nEnter authorization code (part after '?code=' in callback URL): ")
-            tokens = await auth_mgr.request_oauth_token(authorization_code)
-            auth_mgr.oauth = tokens
-
-        # Refresh tokens, just in case
-        try:
-            debug_print("Refreshing tokens...")
-            await auth_mgr.refresh_tokens()
-            debug_print("Tokens refreshed successfully.")
-        except HTTPStatusError as e:
-            print(f"* Could not refresh tokens from {MS_AUTH_TOKENS_FILE}! Error: {e}\nYou might have to delete the tokens file and re-authenticate if refresh token is expired")
-            sys.exit(1)
-
-        # Save the refreshed/updated tokens
-        with open(MS_AUTH_TOKENS_FILE, mode="w") as f:
-            f.write(auth_mgr.oauth.model_dump_json())
+        await authenticate_and_refresh_tokens(auth_mgr)
 
         _print_ok()
 
